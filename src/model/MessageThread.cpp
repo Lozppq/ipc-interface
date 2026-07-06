@@ -8,6 +8,7 @@
 
 #include "MessageThread.h"
 #include <semaphore.h>
+#include <time.h>
 #include <vector>
 
 MessageThread::MessageThread(size_t queue_size) : queue_(queue_size) {
@@ -17,6 +18,12 @@ MessageThread::MessageThread(size_t queue_size) : queue_(queue_size) {
 MessageThread::~MessageThread() {
     stop();
     sem_destroy(&sem_);
+}
+
+void MessageThread::stop() {
+    setRunning(false);
+    sem_post(&sem_);
+    wait();
 }
 
 void MessageThread::OnThreadInit() {}
@@ -82,12 +89,18 @@ void MessageThread::Run() {
             // 有定时器，计算剩余时间，带超时等待
             auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                 timer_heap_.top().expiry - now);
-            
-            timespec ts;
-            ts.tv_sec = remaining.count() / 1000;
-            ts.tv_nsec = (remaining.count() % 1000) * 1000000;
-            
-            sem_timedwait(&sem_, &ts);
+            if (remaining.count() > 0) {
+                const auto wait_ms = remaining.count();
+                timespec ts;
+                clock_gettime(CLOCK_REALTIME, &ts);
+                ts.tv_sec += wait_ms / 1000;
+                ts.tv_nsec += (wait_ms % 1000) * 1000000L;
+                if (ts.tv_nsec >= 1000000000) {
+                    ts.tv_sec += 1;
+                    ts.tv_nsec -= 1000000000;
+                }
+                sem_timedwait(&sem_, &ts);
+            }
         }
 
         // 处理队列中的所有任务（包括定时器注册任务）

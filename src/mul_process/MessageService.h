@@ -14,6 +14,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 class MessageService : public MessageThread {
 public:
@@ -26,9 +27,9 @@ public:
     bool init(const char* shm_name, ShmManager::QueueSize size, bool create);
     bool isInitialized() const;
 
-    int send(const uint8_t* msg, uint32_t len);
-    void sendAsync(const uint8_t* msg, uint32_t len);
-    void receive(const uint8_t* buf, uint32_t buf_len);
+    int send(const std::vector<uint8_t>& msg);
+    void sendAsync(std::vector<uint8_t> msg);
+    void receive(std::shared_ptr<TagReceiveMessage> msg);
 
     void setReceiveHandler(ReceiveHandler handler);
     void startReceive();

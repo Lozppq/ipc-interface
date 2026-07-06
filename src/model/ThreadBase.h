@@ -34,13 +34,23 @@ public:
     /**
      * @brief 停止线程（阻塞等待）
      */
-    void stop();
+    virtual void stop();
     
     /**
      * @brief 查询线程运行状态
      * @return 运行中返回true，否则返回false
      */
     bool isRunning() const;
+
+    /**
+     * @brief 设置运行标志
+     */
+    void setRunning(bool running);
+
+    /**
+     * @brief 等待线程退出
+     */
+    void wait();
 
 protected:
     /**

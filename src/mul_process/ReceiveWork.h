@@ -11,14 +11,20 @@
 #include "ShmManager.h"
 #include <cstdint>
 #include <functional>
+#include <memory>
+#include <vector>
+
+struct TagReceiveMessage {
+    std::vector<uint8_t> data;
+};
 
 class ReceiveWork : public MessageThread {
 public:
-    static constexpr uint32_t DEFAULT_MESSAGE_SIZE = 1024 * 64;
-    using ReceiveHandler = std::function<void(const uint8_t*, uint32_t)>;
+    using ReceiveHandler = std::function<void(std::shared_ptr<TagReceiveMessage>)>;
 
-    ReceiveWork(ShmManager* shm, ReceiveHandler handler, uint32_t buffer_size = DEFAULT_MESSAGE_SIZE);
+    ReceiveWork(ShmManager* shm, ReceiveHandler handler);
     ~ReceiveWork();
+    void setReceiveHandler(ReceiveHandler handler);
 
     ReceiveWork(const ReceiveWork&) = delete;
     ReceiveWork& operator=(const ReceiveWork&) = delete;
@@ -30,8 +36,7 @@ protected:
 private:
     ShmManager* shm_{nullptr};
     ReceiveHandler receive_handler_;
-    uint8_t* buf_msg_{nullptr};
-    uint32_t buffer_size_{DEFAULT_MESSAGE_SIZE};
+    std::vector<uint8_t> buf_msg_;
 };
 
 #endif

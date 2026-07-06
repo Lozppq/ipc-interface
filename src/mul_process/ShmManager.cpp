@@ -20,7 +20,23 @@ ShmManager::ShmManager(const char *name)
     snprintf(shm_name_, sizeof(shm_name_), "%s", name);
 }
 
+void ShmManager::failOpen() {
+    if (q_ && q_ != MAP_FAILED) {
+        uint32_t total_size = queue_size_
+            ? sizeof(RingQueueHeader) + queue_size_
+            : sizeof(RingQueueHeader);
+        munmap(q_, total_size);
+    }
+    q_ = nullptr;
+    if (shm_fd_ >= 0) {
+        ::close(shm_fd_);
+        shm_fd_ = -1;
+    }
+    queue_size_ = 0;
+}
+
 bool ShmManager::open(QueueSize size, bool create) {
+    stop_recv_ = false;
     owner_ = create;
     queue_size_ = static_cast<uint32_t>(size);
 
@@ -43,8 +59,18 @@ bool ShmManager::open(QueueSize size, bool create) {
                 q_ = (RingQueueHeader *)mmap(nullptr, sizeof(RingQueueHeader), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
                 if (q_ != MAP_FAILED) {
                     queue_size_ = q_->data_size.load(std::memory_order_acquire);
-                    ring_reset(q_, queue_size_);
-                    return true;
+                    munmap(q_, sizeof(RingQueueHeader));
+                    if (queue_size_ == 0) {
+                        failOpen();
+                        return false;
+                    }
+                    uint32_t total_size = sizeof(RingQueueHeader) + queue_size_;
+                    q_ = (RingQueueHeader *)mmap(nullptr, total_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
+                    if (q_ != MAP_FAILED) {
+                        ring_reset(q_, queue_size_);
+                        return true;
+                    }
+                    q_ = nullptr;
                 }
             }
         }
@@ -55,10 +81,21 @@ bool ShmManager::open(QueueSize size, bool create) {
             q_ = (RingQueueHeader *)mmap(nullptr, sizeof(RingQueueHeader), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
             if (q_ != MAP_FAILED) {
                 queue_size_ = q_->data_size.load(std::memory_order_acquire);
-                return true;
+                munmap(q_, sizeof(RingQueueHeader));
+                if (queue_size_ == 0) {
+                    failOpen();
+                    return false;
+                }
+                uint32_t total_size = sizeof(RingQueueHeader) + queue_size_;
+                q_ = (RingQueueHeader *)mmap(nullptr, total_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
+                if (q_ != MAP_FAILED) {
+                    return true;
+                }
+                q_ = nullptr;
             }
         }
     }
+    failOpen();
     return false;
 }
 
@@ -78,6 +115,7 @@ void ShmManager::close() {
         owner_ = false;
     }
     queue_size_ = 0;
+    stop_recv_ = false;
 }
 
 ShmManager::~ShmManager() {
@@ -88,16 +126,33 @@ bool ShmManager::valid() const {
     return q_ && q_ != MAP_FAILED;
 }
 
-int ShmManager::send(const uint8_t *msg, uint32_t len) {
-    return ring_enqueue(q_, queue_size_, msg, len);
+int ShmManager::send(const std::vector<uint8_t>& msg) {
+    if (!valid() || msg.empty()) {
+        return -1;
+    }
+    return ring_enqueue(q_, queue_size_, msg.data(), static_cast<uint32_t>(msg.size()));
 }
 
-uint32_t ShmManager::recv(uint8_t *buf, uint32_t buf_len) {
-    return ring_dequeue(q_, queue_size_, buf, buf_len);
+uint32_t ShmManager::recv(std::vector<uint8_t>& buf) {
+    if (!valid()) {
+        return 0;
+    }
+    return ring_dequeue(q_, queue_size_, buf);
 }
 
 bool ShmManager::is_empty() {
     return ring_is_empty(q_);
+}
+
+void ShmManager::wake() {
+    if (valid()) {
+        sem_post(&q_->sem);
+    }
+}
+
+void ShmManager::stopRecv() {
+    stop_recv_ = true;
+    wake();
 }
 
 bool ShmManager::is_full(uint32_t len) {
@@ -181,17 +236,16 @@ int ShmManager::ring_enqueue(RingQueueHeader *q, uint32_t queue_size, const uint
     return 0;
 }
 
-uint32_t ShmManager::ring_dequeue(RingQueueHeader *q, uint32_t queue_size, uint8_t *buf, uint32_t buf_len) {
-    if (buf_len == 0)
-        return 0;
-
-    uint32_t copied = 0;
+uint32_t ShmManager::ring_dequeue(RingQueueHeader *q, uint32_t queue_size, std::vector<uint8_t>& buf) {
     uint32_t h = q->head.load(std::memory_order_acquire);
 
     while (1) {
         uint32_t t = q->tail.load(std::memory_order_acquire);
         // 队列为空，阻塞等待
         if (h == t) {
+            if (stop_recv_) {
+                return 0;
+            }
             sem_wait(&q->sem);
             h = q->head.load(std::memory_order_acquire);
             continue;
@@ -208,39 +262,38 @@ uint32_t ShmManager::ring_dequeue(RingQueueHeader *q, uint32_t queue_size, uint8
             header = *(uint32_t *)header_buf;
         }
 
-        // 数据未提交，退出循环
-        if (!(header & MSG_COMMIT_BIT))
-            break;
+        // 数据未提交，继续等待
+        if (!(header & MSG_COMMIT_BIT)) {
+            usleep(1000);
+            continue;
+        }
 
         // 提取长度
         uint32_t len = header & MSG_HEADER_MASK;
         uint32_t total_msg_len = len + 4;
 
-        // 缓冲区不足，退出
-        if (copied + len > buf_len)
-            break;
+        if (len == 0 || len > queue_size - 4) {
+            h = (h + 4) % queue_size;
+            q->head.store(h, std::memory_order_release);
+            continue;
+        }
+
+        buf.resize(len);
 
         // 读取数据
         uint32_t data_start = h + 4;
         if (data_start + len <= queue_size) {
-            memcpy(buf + copied, &q->data[data_start], len);
+            memcpy(buf.data(), &q->data[data_start], len);
         } else {
             uint32_t part1_len = queue_size - data_start;
-            memcpy(buf + copied, &q->data[data_start], part1_len);
-            memcpy(buf + copied + part1_len, &q->data[0], len - part1_len);
+            memcpy(buf.data(), &q->data[data_start], part1_len);
+            memcpy(buf.data() + part1_len, &q->data[0], len - part1_len);
         }
 
-        copied += len;
         h = (h + total_msg_len) % queue_size;
-        break;
-    }
-
-    // 更新队头指针
-    if (copied > 0) {
         q->head.store(h, std::memory_order_release);
+        return len;
     }
-
-    return copied;
 }
 
 void ShmManager::ring_init(RingQueueHeader *q, uint32_t queue_size) {

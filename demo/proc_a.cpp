@@ -1,12 +1,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstdint>
+#include <vector>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <cstring>
-#include "src/mul_process/ShmManager.h"
+#include "mul_process/ShmManager.h"
 
 #define SHM_NAME "/shm_lockfree_ring"
 
@@ -20,14 +21,14 @@ int main(void)
 
     printf("=== 进程A 启动 PID: %d ===\n", getpid());
 
-    uint8_t send_buf[256];
-
     for (int i = 0; i < 5; i++)
     {
-        snprintf((char*)send_buf, sizeof(send_buf), "A Msg %d", i);
-        if (shm.send(send_buf, strlen((const char*)send_buf) + 1) == 0)
+        char text[256];
+        snprintf(text, sizeof(text), "A Msg %d", i);
+        std::vector<uint8_t> send_buf(text, text + strlen(text) + 1);
+        if (shm.send(send_buf) == 0)
         {
-            printf("进程A 发送: %s\n", (const char*)send_buf);
+            printf("进程A 发送: %s\n", text);
         }
         else
         {

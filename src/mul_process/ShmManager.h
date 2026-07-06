@@ -12,6 +12,7 @@
 #include <atomic>
 #include <cstdint>
 #include <semaphore.h>
+#include <vector>
 
 // 消息头部掩码，低31位存储长度，最高位为提交标志
 #define MSG_HEADER_MASK  0x7FFFFFFF
@@ -85,26 +86,27 @@ public:
 
     /**
      * @brief 发送消息
-     * @param msg 消息数据指针
-     * @param len 消息长度
+     * @param msg 消息数据
      * @return 成功返回0，失败返回-1
      */
-    int send(const uint8_t *msg, uint32_t len);
+    int send(const std::vector<uint8_t>& msg);
     
     /**
-     * @brief 接收消息
-     * @param buf 接收缓冲区
-     * @param buf_len 缓冲区大小
+     * @brief 接收消息，按消息实际长度调整 buf 并写入数据
+     * @param buf 接收缓冲区，内部会 resize 到消息长度
      * @return 接收字节数，失败返回0
      */
-    uint32_t recv(uint8_t *buf, uint32_t buf_len);
+    uint32_t recv(std::vector<uint8_t>& buf);
+
+    void wake();
+    void stopRecv();
 
     /**
      * @brief 判断队列是否为空
      * @return 空返回true，否则返回false
      */
     bool is_empty();
-    
+
     /**
      * @brief 判断队列是否已满
      * @param len 待写入数据长度
@@ -116,17 +118,19 @@ private:
     bool ring_is_empty(RingQueueHeader *q);
     bool ring_is_full(RingQueueHeader *q, uint32_t queue_size, uint32_t len);
     int ring_enqueue(RingQueueHeader *q, uint32_t queue_size, const uint8_t *msg, uint32_t len);
-    uint32_t ring_dequeue(RingQueueHeader *q, uint32_t queue_size, uint8_t *buf, uint32_t buf_len);
+    uint32_t ring_dequeue(RingQueueHeader *q, uint32_t queue_size, std::vector<uint8_t>& buf);
     void ring_init(RingQueueHeader *q, uint32_t queue_size);
     void ring_destroy(RingQueueHeader *q);
     void ring_reset(RingQueueHeader *q, uint32_t queue_size);
+    void failOpen();
 
 private:
-    int shm_fd_;           // 共享内存文件描述符
-    RingQueueHeader *q_;   // 队列头部指针
-    bool owner_;           // 是否为创建方
-    uint32_t queue_size_;  // 数据区大小
-    char shm_name_[64];    // 共享内存名称
+    int shm_fd_;
+    RingQueueHeader *q_;
+    bool owner_;
+    uint32_t queue_size_;
+    char shm_name_[64];
+    bool stop_recv_{false};
 };
 
 #endif

@@ -35,6 +35,16 @@ bool ThreadBase::isRunning() const {
     return running_.load(std::memory_order_acquire);
 }
 
+void ThreadBase::setRunning(bool running) {
+    running_.store(running, std::memory_order_release);
+}
+
+void ThreadBase::wait() {
+    if (thread_.joinable()) {
+        thread_.join();
+    }
+}
+
 bool ThreadBase::isInWorkerThread() const {
     return std::this_thread::get_id() == worker_thread_id_;
 }
@@ -43,7 +53,7 @@ void ThreadBase::threadFunc() {
     worker_thread_id_ = std::this_thread::get_id();
     OnThreadInit();
     // 循环执行 Run()，直到 running_ 被设置为 false
-    while (running_.load(std::memory_order_acquire)) {
+    while (isRunning()) {
         Run();
     }
 }

@@ -7,8 +7,8 @@
 #include <vector>
 
 MessageService::MessageService() : MessageThread() {
-    receive_handler_ = [this](const uint8_t* buf, uint32_t len) {
-        receive(buf, len);
+    receive_handler_ = [this](std::shared_ptr<TagReceiveMessage> msg) {
+        receive(msg);
     };
 }
 
@@ -17,7 +17,6 @@ MessageService::~MessageService() {
     receive_handler_ = nullptr;
 
     if (initialized_) {
-        stopReceive();
         stop();
         shm_.reset();
         initialized_ = false;
@@ -53,34 +52,35 @@ bool MessageService::isInitialized() const {
     return initialized_ && shm_ && shm_->valid();
 }
 
-int MessageService::send(const uint8_t* msg, uint32_t len) {
-    if (!isInitialized() || !msg || len == 0) {
+int MessageService::send(const std::vector<uint8_t>& msg) {
+    if (!isInitialized() || msg.empty()) {
         return -1;
     }
-    return shm_->send(msg, len);
+    return shm_->send(msg);
 }
 
-void MessageService::sendAsync(const uint8_t* msg, uint32_t len) {
-    if (!isInitialized() || !msg || len == 0) {
+void MessageService::sendAsync(std::vector<uint8_t> msg) {
+    if (!isInitialized() || msg.empty()) {
         return;
     }
 
-    std::vector<uint8_t> payload(msg, msg + len);
-    post([this, payload = std::move(payload)]() {
-        shm_->send(payload.data(), static_cast<uint32_t>(payload.size()));
+    post([this, payload = std::move(msg)]() {
+        shm_->send(payload);
     });
 }
 
-void MessageService::receive(const uint8_t* buf, uint32_t buf_len) {
+void MessageService::receive(std::shared_ptr<TagReceiveMessage> msg) {
+    if (!msg || msg->data.empty()) {
+        return;
+    }
     // 在这里分发消息
 }
 
 void MessageService::setReceiveHandler(ReceiveHandler handler) {
-    // 如果正在运行则直接返回
-    if (isRunning()) {
-        return;
-    }
     receive_handler_ = std::move(handler);
+    if (receive_work_) {
+        receive_work_->setReceiveHandler(receive_handler_);
+    }
 }
 
 void MessageService::startReceive() {
@@ -89,12 +89,18 @@ void MessageService::startReceive() {
     }
 
     receiving_ = true;
-    receive_work_ = std::make_unique<ReceiveWork>(shm_.get(), receive_handler_, ReceiveWork::DEFAULT_MESSAGE_SIZE);
+    receive_work_ = std::make_unique<ReceiveWork>(shm_.get(), receive_handler_);
     receive_work_->start();
 }
 
 void MessageService::stopReceive() {
     receiving_ = false;
+    if (!receive_work_) {
+        return;
+    }
+    if (shm_) {
+        shm_->stopRecv();
+    }
     receive_work_->stop();
     receive_work_.reset();
 }

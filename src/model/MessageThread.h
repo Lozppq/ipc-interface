@@ -50,6 +50,8 @@ public:
      */
     void startTimer(int interval_ms, std::function<void()> callback);
 
+    void stop() override;
+
 protected:
     void OnThreadInit() override;
     void Run() override;
@@ -70,9 +72,7 @@ private:
         }
     };
 private:
-    bool isInWorkerThread() const;
     
-    std::thread::id worker_thread_id_;            // 工作线程ID
     LockFreeQueue<std::function<void()>> queue_;  // 无锁任务队列
     sem_t sem_;                                   // 唤醒信号量
     std::priority_queue<Timer, std::vector<Timer>, std::greater<Timer>> timer_heap_; // 定时器堆
