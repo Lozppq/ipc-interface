@@ -7,6 +7,7 @@
  */
 
 #include "ShmManager.h"
+#include <cstdint>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -96,11 +97,16 @@ bool ShmManager::open(QueueSize size, bool create) {
         }
     }
     failOpen();
+
     return false;
 }
 
 void ShmManager::close() {
     if (q_ && q_ != MAP_FAILED) {
+        // 创建方close清空标志
+        if (owner_) {
+            q_->flag.store(0, std::memory_order_relaxed);
+        }
         uint32_t total_size = sizeof(RingQueueHeader) + queue_size_;
         munmap(q_, total_size);
         q_ = nullptr;
@@ -195,8 +201,9 @@ int ShmManager::ring_enqueue(RingQueueHeader *q, uint32_t queue_size, const uint
 
         // CAS成功则跳出循环
         if (q->tail.compare_exchange_weak(old_tail, new_tail,
-                std::memory_order_acq_rel, std::memory_order_acquire))
+                std::memory_order_acq_rel, std::memory_order_acquire)){
             break;
+        }
     }
 
     // 写入长度头（不设置提交标志）
@@ -240,16 +247,10 @@ uint32_t ShmManager::ring_dequeue(RingQueueHeader *q, uint32_t queue_size, std::
     uint32_t h = q->head.load(std::memory_order_acquire);
 
     while (1) {
-        uint32_t t = q->tail.load(std::memory_order_acquire);
-        // 队列为空，阻塞等待
-        if (h == t) {
-            if (stop_recv_) {
-                return 0;
-            }
-            sem_wait(&q->sem);
-            h = q->head.load(std::memory_order_acquire);
-            continue;
+        if (stop_recv_) {
+            return 0;
         }
+        sem_wait(&q->sem);
 
         // 读取长度头
         uint32_t header;
@@ -262,15 +263,21 @@ uint32_t ShmManager::ring_dequeue(RingQueueHeader *q, uint32_t queue_size, std::
             header = *(uint32_t *)header_buf;
         }
 
-        // 数据未提交，继续等待
-        if (!(header & MSG_COMMIT_BIT)) {
-            usleep(1000);
-            continue;
-        }
-
         // 提取长度
         uint32_t len = header & MSG_HEADER_MASK;
         uint32_t total_msg_len = len + 4;
+
+        // 数据未提交，继续等待
+        uint32_t retry_count = 0;
+        while (retry_count++ < 10 && !(header & MSG_COMMIT_BIT)) {
+            usleep(1000);
+        }
+
+        if (retry_count >= 10) {
+            // 清理数据
+            q->head.store((h + total_msg_len) % queue_size, std::memory_order_release);
+            continue;
+        }
 
         if (len == 0 || len > queue_size - 4) {
             h = (h + 4) % queue_size;

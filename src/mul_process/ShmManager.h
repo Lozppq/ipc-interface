@@ -48,7 +48,7 @@ public:
      * @brief 标志位枚举
      */
     enum class Flag : uint32_t {
-        FLAG_ALLOW_WRITE = 0x01, // bit0: 允许写入
+        FLAG_ALLOW_WRITE = 0x01, // bit0: 1允许写入，0不允许写入
     };
 
     /**

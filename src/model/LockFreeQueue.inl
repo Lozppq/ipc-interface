@@ -35,7 +35,7 @@ bool LockFreeQueue<T>::push(const T& item) {
     while (true) {
         head = head_.load(std::memory_order_acquire);
         // 通过减法判断是否满：tail - head >= capacity_ 时满
-        if ((tail - head) & ~mask_ != 0) {
+        if (((tail - head) & ~mask_) != 0) {
             return false;
         }
         
@@ -60,7 +60,7 @@ bool LockFreeQueue<T>::push(T&& item) {
     
     while (true) {
         head = head_.load(std::memory_order_acquire);
-        if ((tail - head) & ~mask_ != 0) {
+        if (((tail - head) & ~mask_) != 0) {
             return false;
         }
         
@@ -109,7 +109,7 @@ template<typename T>
 bool LockFreeQueue<T>::isFull() const {
     size_t head = head_.load(std::memory_order_acquire);
     size_t tail = tail_.load(std::memory_order_acquire);
-    return (tail - head) & ~mask_ != 0;
+    return ((tail - head) & ~mask_) != 0;
 }
 
 template<typename T>

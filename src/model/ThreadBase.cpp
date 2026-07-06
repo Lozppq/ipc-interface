@@ -24,10 +24,8 @@ void ThreadBase::start() {
 void ThreadBase::stop() {
     // 设置停止标志，等待线程退出
     if (running_.load(std::memory_order_acquire)) {
-        running_.store(false, std::memory_order_release);
-        if (thread_.joinable()) {
-            thread_.join();
-        }
+        setRunning(false);
+        wait();
     }
 }
 

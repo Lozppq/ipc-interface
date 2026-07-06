@@ -24,7 +24,7 @@ BUILD_OBJ := $(BUILD_DIR)/obj
 LIB_NAME := ipc-interface
 LIB_SO   := $(BUILD_LIB)/lib$(LIB_NAME).so
 
-CXXFLAGS := -std=c++11 -Wall -O2 -fPIC -Isrc
+CXXFLAGS := -std=c++14 -Wall -O2 -fPIC -Isrc
 LDFLAGS  := -shared -Wl,-soname,lib$(LIB_NAME).so
 LDLIBS   := -lrt -lpthread
 
@@ -83,7 +83,7 @@ $(BUILD_BIN):
 # demo: demo/*.cpp 每个源文件 -> build/bin/<name>
 # ---------------------------------------------------------------------------
 
-DEMO_CXXFLAGS := -std=c++11 -Wall -O2 -I$(BUILD_INC)
+DEMO_CXXFLAGS := -std=c++14 -Wall -O2 -I$(BUILD_INC)
 DEMO_LDFLAGS  := -L$(BUILD_LIB) -l$(LIB_NAME) -Wl,-rpath,'$$ORIGIN/../lib' -lrt -lpthread
 
 $(BUILD_BIN)/%: demo/%.cpp $(LIB_SO) | $(BUILD_BIN)
