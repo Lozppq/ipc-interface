@@ -8,6 +8,7 @@
 
 #include "MessageThread.h"
 #include <semaphore.h>
+#include <vector>
 
 MessageThread::MessageThread(size_t queue_size) : queue_(queue_size) {
     sem_init(&sem_, 0, 0);
@@ -89,8 +90,15 @@ void MessageThread::Run() {
             sem_timedwait(&sem_, &ts);
         }
 
+        // 处理队列中的所有任务（包括定时器注册任务）
+        std::function<void()> task;
+        while (queue_.pop(task)) {
+            task();
+        }
+
         // 处理已过期的定时器
         now = std::chrono::steady_clock::now();
+        std::vector<Timer> expired_timers;
         while (!timer_heap_.empty() && timer_heap_.top().expiry <= now) {
             auto timer = timer_heap_.top();
             timer_heap_.pop();
@@ -99,15 +107,11 @@ void MessageThread::Run() {
             // 周期定时器重新计算下次超时时间
             if (timer.periodic) {
                 timer.expiry = now + timer.interval;
-                timer_heap_.push(timer);
+                expired_timers.push_back(timer);
             }
         }
-
-        // 处理队列中的所有任务（包括定时器注册任务）
-        std::function<void()> task;
-        while (queue_.pop(task)) {
-            task();
+        for (auto& timer : expired_timers) {
+            timer_heap_.push(timer);
         }
-
     }
 }

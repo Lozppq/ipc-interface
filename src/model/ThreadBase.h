@@ -21,7 +21,7 @@ public:
     /**
      * @brief 析构函数，确保线程停止
      */
-    virtual ~ThreadBase();
+    ~ThreadBase();
 
     ThreadBase(const ThreadBase&) = delete;
     ThreadBase& operator=(const ThreadBase&) = delete;

@@ -28,7 +28,7 @@ public:
     /**
      * @brief 析构函数，停止线程并销毁信号量
      */
-    ~MessageThread() override;
+    ~MessageThread();
 
     /**
      * @brief 投递普通任务
