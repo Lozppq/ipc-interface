@@ -6,7 +6,11 @@
 #include "MessageService.h"
 #include <vector>
 
-MessageService::MessageService() : MessageThread(1024) {}
+MessageService::MessageService() : MessageThread() {
+    receive_handler_ = [this](const uint8_t* buf, uint32_t len) {
+        receive(buf, len);
+    };
+}
 
 MessageService::~MessageService() {
     stopReceive();
@@ -41,6 +45,7 @@ bool MessageService::init(const char* shm_name, ShmManager::QueueSize size, bool
 
     start();
     initialized_ = true;
+    startReceive();
     return true;
 }
 
@@ -66,14 +71,15 @@ void MessageService::sendAsync(const uint8_t* msg, uint32_t len) {
     });
 }
 
-uint32_t MessageService::receive(uint8_t* buf, uint32_t buf_len) {
-    if (!isInitialized() || !buf || buf_len == 0) {
-        return 0;
-    }
-    return shm_->recv(buf, buf_len);
+void MessageService::receive(const uint8_t* buf, uint32_t buf_len) {
+    // 在这里分发消息
 }
 
 void MessageService::setReceiveHandler(ReceiveHandler handler) {
+    // 如果正在运行则直接返回
+    if (isRunning()) {
+        return;
+    }
     receive_handler_ = std::move(handler);
 }
 
@@ -94,5 +100,5 @@ void MessageService::stopReceive() {
 }
 
 void MessageService::OnThreadInit() {
-    startReceive();
+    
 }

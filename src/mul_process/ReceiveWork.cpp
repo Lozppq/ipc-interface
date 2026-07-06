@@ -5,7 +5,7 @@
 
 #include "ReceiveWork.h"
 
-ReceiveWork::ReceiveWork(ShmManager* shm, ReceiveHandler handler, uint32_t buffer_size) : MessageThread(1024), shm_(shm), receive_handler_(handler), buffer_size_(buffer_size) {
+ReceiveWork::ReceiveWork(ShmManager* shm, ReceiveHandler handler, uint32_t buffer_size) : MessageThread(), shm_(shm), receive_handler_(handler), buffer_size_(buffer_size) {
     buf_msg_ = new uint8_t[buffer_size_];
 
 }

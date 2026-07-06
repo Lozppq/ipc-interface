@@ -109,6 +109,7 @@ void MessageThread::Run() {
                 timer.expiry = now + timer.interval;
                 expired_timers.push_back(timer);
             }
+            now = std::chrono::steady_clock::now();
         }
         for (auto& timer : expired_timers) {
             timer_heap_.push(timer);

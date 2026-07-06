@@ -28,7 +28,7 @@ public:
 
     int send(const uint8_t* msg, uint32_t len);
     void sendAsync(const uint8_t* msg, uint32_t len);
-    uint32_t receive(uint8_t* buf, uint32_t buf_len);
+    void receive(const uint8_t* buf, uint32_t buf_len);
 
     void setReceiveHandler(ReceiveHandler handler);
     void startReceive();
