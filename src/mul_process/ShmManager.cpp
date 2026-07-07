@@ -15,6 +15,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <semaphore.h>
+#include <chrono>
 
 ShmManager::ShmManager(const char *name)
     : shm_fd_(-1), q_(nullptr), owner_(false), queue_size_(0) {
@@ -244,16 +245,16 @@ int ShmManager::ring_enqueue(RingQueueHeader *q, uint32_t queue_size, const uint
 }
 
 uint32_t ShmManager::ring_dequeue(RingQueueHeader *q, uint32_t queue_size, std::vector<uint8_t>& buf) {
-    uint32_t h = q->head.load(std::memory_order_acquire);
-
+    sem_wait(&q->sem);
+    if (stop_recv_) {
+        return 0;
+    }
+    // 数据未提交，继续等待
+    auto now = std::chrono::steady_clock::now();
     while (1) {
-        if (stop_recv_) {
-            return 0;
-        }
-        sem_wait(&q->sem);
-
+        uint32_t h = q->head.load(std::memory_order_acquire);
         // 读取长度头
-        uint32_t header;
+        uint32_t header = 0;
         if (h + 4 <= queue_size) {
             header = *(volatile uint32_t *)&q->data[h];
         } else {
@@ -267,22 +268,21 @@ uint32_t ShmManager::ring_dequeue(RingQueueHeader *q, uint32_t queue_size, std::
         uint32_t len = header & MSG_HEADER_MASK;
         uint32_t total_msg_len = len + 4;
 
-        // 数据未提交，继续等待
-        uint32_t retry_count = 0;
-        while (retry_count++ < 10 && !(header & MSG_COMMIT_BIT)) {
-            usleep(1000);
-        }
-
-        if (retry_count >= 10) {
+        if (!(header & MSG_COMMIT_BIT)) {
+            if (std::chrono::steady_clock::now() - now < std::chrono::milliseconds(100))
+            {
+                usleep(10);
+                continue;
+            }
             // 清理数据
             q->head.store((h + total_msg_len) % queue_size, std::memory_order_release);
-            continue;
+            return 0;
         }
 
         if (len == 0 || len > queue_size - 4) {
             h = (h + 4) % queue_size;
             q->head.store(h, std::memory_order_release);
-            continue;
+            return 0;
         }
 
         buf.resize(len);
