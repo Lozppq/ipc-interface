@@ -6,6 +6,9 @@
 #include "MessageService.h"
 #include <vector>
 
+namespace IpcInterface {
+namespace MulProcess {
+
 MessageService::MessageService() : MessageThread() {
     receive_handler_ = [this](std::shared_ptr<TagReceiveMessage> msg) {
         receive(msg);
@@ -108,3 +111,6 @@ void MessageService::stopReceive() {
 void MessageService::OnThreadInit() {
     
 }
+
+} // namespace MulProcess
+} // namespace IpcInterface

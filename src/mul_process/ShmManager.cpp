@@ -17,6 +17,10 @@
 #include <semaphore.h>
 #include <chrono>
 
+
+namespace IpcInterface {
+namespace MulProcess {
+
 ShmManager::ShmManager(const char *name)
     : shm_fd_(-1), q_(nullptr), owner_(false), queue_size_(0) {
     snprintf(shm_name_, sizeof(shm_name_), "%s", name);
@@ -322,3 +326,6 @@ void ShmManager::ring_reset(RingQueueHeader *q, uint32_t queue_size) {
     ring_destroy(q);
     ring_init(q, queue_size);
 }
+
+} // namespace MulProcess
+} // namespace IpcInterface

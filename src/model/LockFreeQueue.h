@@ -5,14 +5,13 @@
  * 使用环形缓冲区 + 幂次容量优化，通过 committed 标志位保证数据可见性，
  * 避免 ABA 问题，适用于高并发场景下的任务投递。
  */
-
-#ifndef LOCKFREE_QUEUE_H
-#define LOCKFREE_QUEUE_H
-
+ #pragma once
 #include <atomic>
 #include <cstdint>
 #include <utility>
 
+namespace IpcInterface {
+namespace Model {
 template<typename T>
 class LockFreeQueue {
 public:
@@ -93,5 +92,5 @@ private:
 };
 
 #include "LockFreeQueue.inl"
-
-#endif
+} // namespace Model
+} // namespace IpcInterface

@@ -5,6 +5,9 @@
 
 #include "ReceiveWork.h"
 
+namespace IpcInterface {
+namespace MulProcess {
+
 ReceiveWork::ReceiveWork(ShmManager* shm, ReceiveHandler handler)
     : MessageThread(), shm_(shm), receive_handler_(handler) {}
 
@@ -34,3 +37,6 @@ void ReceiveWork::OnThreadInit() {
         ReceiveMessage();
     });
 }
+
+} // namespace MulProcess
+} // namespace IpcInterface

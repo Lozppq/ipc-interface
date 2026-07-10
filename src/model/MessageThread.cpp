@@ -11,6 +11,9 @@
 #include <time.h>
 #include <vector>
 
+namespace IpcInterface {
+namespace Model {
+
 MessageThread::MessageThread(size_t queue_size) : queue_(queue_size) {
     sem_init(&sem_, 0, 0);
 }
@@ -129,3 +132,6 @@ void MessageThread::Run() {
         }
     }
 }
+
+} // namespace Model
+} // namespace IpcInterface

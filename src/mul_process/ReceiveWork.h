@@ -4,8 +4,7 @@
  * @details 继承 MessageThread，在独立工作线程中轮询接收消息并触发回调。
  */
 
-#ifndef RECEIVE_WORK_H
-#define RECEIVE_WORK_H
+#pragma once
 
 #include "../model/MessageThread.h"
 #include "ShmManager.h"
@@ -14,6 +13,8 @@
 #include <memory>
 #include <vector>
 
+namespace IpcInterface {
+namespace MulProcess {
 struct TagReceiveMessage {
     std::vector<uint8_t> data;
 };
@@ -39,4 +40,5 @@ private:
     std::vector<uint8_t> buf_msg_;
 };
 
-#endif
+} // namespace MulProcess
+} // namespace IpcInterface

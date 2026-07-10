@@ -7,6 +7,9 @@
 
 #include "ThreadBase.h"
 
+namespace IpcInterface {
+namespace Model {
+
 ThreadBase::ThreadBase() {}
 
 ThreadBase::~ThreadBase() {
@@ -55,3 +58,6 @@ void ThreadBase::threadFunc() {
         Run();
     }
 }
+
+} // namespace Model
+} // namespace IpcInterface

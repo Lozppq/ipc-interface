@@ -5,12 +5,13 @@
  * 派生类通过重写纯虚函数 Run() 实现具体业务逻辑，支持线程生命周期管理。
  */
 
-#ifndef THREAD_BASE_H
-#define THREAD_BASE_H
+#pragma once
 
 #include <atomic>
 #include <thread>
 
+namespace IpcInterface {
+namespace Model {
 class ThreadBase {
 public:
     /**
@@ -81,4 +82,5 @@ private:
     std::atomic<bool> running_{false}; // 运行标志位
 };
 
-#endif
+} // namespace Model
+} // namespace IpcInterface

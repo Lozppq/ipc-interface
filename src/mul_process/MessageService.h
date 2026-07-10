@@ -4,8 +4,7 @@
  * @details 单例类，继承 MessageThread，封装进程间消息收发能力。
  */
 
-#ifndef MESSAGE_SERVICE_H
-#define MESSAGE_SERVICE_H
+#pragma once
 
 #include "../model/MessageThread.h"
 #include "ReceiveWork.h"
@@ -15,6 +14,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace IpcInterface {
+namespace MulProcess {
 
 class MessageService : public MessageThread {
 public:
@@ -51,4 +53,5 @@ private:
     std::unique_ptr<ReceiveWork> receive_work_;
 };
 
-#endif
+} // namespace MulProcess
+} // namespace IpcInterface

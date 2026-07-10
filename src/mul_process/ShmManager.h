@@ -6,29 +6,49 @@
  * 支持崩溃重建（通过 flag 标志位判断初始化状态），数据区大小可配置。
  */
 
-#ifndef SHM_MANAGER_H
-#define SHM_MANAGER_H
+#pragma once
 
 #include <atomic>
 #include <cstdint>
 #include <semaphore.h>
 #include <vector>
 
+namespace IpcInterface {
+namespace MulProcess {
 // 消息头部掩码，低31位存储长度，最高位为提交标志
 #define MSG_HEADER_MASK  0x7FFFFFFF
 #define MSG_COMMIT_BIT   0x80000000
+
+#define SMALL_DATA_SLOT_SIZE 64
+#define MEDIUM_DATA_SLOT_SIZE 1024
+#define LARGE_DATA_SLOT_SIZE (1024 * 256)
+
+typedef struct {
+    std::atomic<uint32_t> recv_mask;  // 每一个bit代表一个接收者已经接收
+    std::atomic<uint8_t> commit;  // 提交标志位
+    uint8_t data[];
+}DataSlot;
 
 /**
  * @brief 环形队列头部结构，存储在共享内存起始位置
  */
 typedef struct {
-    sem_t sem __attribute__((aligned(4)));           // 信号量，用于消费者阻塞等待
-    std::atomic<uint32_t> head __attribute__((aligned(4)));  // 队头指针
-    std::atomic<uint32_t> tail __attribute__((aligned(4)));  // 队尾指针
-    std::atomic<uint32_t> flag __attribute__((aligned(4)));  // 标志位（如允许写入标志）
-    std::atomic<uint32_t> data_size __attribute__((aligned(4))); // 数据区大小
+    sem_t sem;           // 信号量，用于消费者阻塞等待
+    std::atomic<uint32_t> head;  // 队头指针
+    std::atomic<uint32_t> tail;  // 队尾指针
+    std::atomic<uint32_t> flag;  // 标志位（如允许写入标志）
+    std::atomic<uint32_t> data_size; // 数据区大小
     uint8_t data[0];  // 柔性数组成员，指向共享内存数据区
 } RingQueueHeader;
+
+
+
+typedef struct {
+    std::atomic<uint32_t> send_tail;  // 维护一个最后发送消息的索引
+    std::atomic<uint32_t> send_head;  // 维护一个最后发送消息的掩码
+    std::atomic<uint8_t> send_status;  // 维护一个最后发送消息的状态
+    std::atomic<uint8_t> send_object_id;  // 维护一个最后发送消息的对象id
+}ClientStatusInfo;
 
 class ShmManager {
 public:
@@ -133,4 +153,5 @@ private:
     bool stop_recv_{false};
 };
 
-#endif
+} // namespace MulProcess
+} // namespace IpcInterface

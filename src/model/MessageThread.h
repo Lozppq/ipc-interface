@@ -6,8 +6,7 @@
  * 所有任务（消息、定时器回调）统一在工作线程中执行，保证线程安全。
  */
 
-#ifndef MESSAGE_THREAD_H
-#define MESSAGE_THREAD_H
+#pragma once
 
 #include "ThreadBase.h"
 #include "LockFreeQueue.h"
@@ -17,6 +16,8 @@
 #include <semaphore.h>
 #include <thread>
 
+namespace IpcInterface {
+namespace Model {
 class MessageThread : public ThreadBase {
 public:
     /**
@@ -78,4 +79,5 @@ private:
     std::priority_queue<Timer, std::vector<Timer>, std::greater<Timer>> timer_heap_; // 定时器堆
 };
 
-#endif
+} // namespace Model
+} // namespace IpcInterface
