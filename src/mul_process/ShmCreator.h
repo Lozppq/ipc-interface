@@ -45,6 +45,8 @@ typedef struct {
     std::atomic<uint32_t> head;  // 队头指针
     std::atomic<uint32_t> tail;  // 队尾指针
     std::atomic<uint32_t> slot_size; // 数据区大小
+    std::atomic<uint32_t> flag; // 标志位
+    // bit0：1允许发送，0不允许发送
     SMALLDataSlot data[0];  // 柔性数组成员，指向共享内存数据区
 } SMALLRingQueueHeader;
 
@@ -56,6 +58,8 @@ typedef struct {
     std::atomic<uint32_t> head;  // 队头指针
     std::atomic<uint32_t> tail;  // 队尾指针
     std::atomic<uint32_t> slot_size; // 数据区大小
+    std::atomic<uint32_t> flag; // 标志位
+    // bit0：1允许发送，0不允许发送
     MEDIUMDataSlot data[0];  // 柔性数组成员，指向共享内存数据区
 } MEDIUMRingQueueHeader;
 
@@ -67,6 +71,8 @@ typedef struct {
     std::atomic<uint32_t> head;  // 队头指针
     std::atomic<uint32_t> tail;  // 队尾指针
     std::atomic<uint32_t> slot_size; // 数据区大小
+    std::atomic<uint32_t> flag; // 标志位
+    // bit0：1允许发送，0不允许发送
     LARGEDataSlot data[0];  // 柔性数组成员，指向共享内存数据区
 } LARGERingQueueHeader;
 
@@ -155,12 +161,19 @@ private:
     /**
      * @brief 创建共享内存结构体
      */
-     void create(bool create);
+     void create_shm(bool create);
+    
+    /**
+     * @brief 删除共享内存
+     */
+    void delete_shm();
 
 private:
     std::string shm_name_;
     SlotSize slot_size_;
     uint32_t slot_count_;
+    // 共享内存总大小
+    uint32_t total_size_;
     int shm_fd_;
     void* shm_ptr_;
     bool is_owner_;
