@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <chrono>
 #include "../define/common.h"
 
@@ -20,12 +21,25 @@ ShmCreator::~ShmCreator() {
 }
 
 void ShmCreator::create_shm(bool create) {
+    if (!create) {
+        struct stat st;
+        if (fstat(shm_fd_, &st) != 0) {
+            printf("ShmCreator: fstat failed\n");
+            return;
+        }
+        total_size_ = static_cast<uint32_t>(st.st_size);
+    }
+
     switch (slot_size_) {
-            case SlotSize::SIZE_64B:
-            total_size_ = sizeof(SMALLRingQueueHeader) + slot_count_ * sizeof(SMALLDataSlot);
+        case SlotSize::SIZE_64B:
+            if (create) {
+                total_size_ = sizeof(SMALLRingQueueHeader) + slot_count_ * sizeof(SMALLDataSlot);
+                ftruncate(shm_fd_, total_size_);
+            }
             SMALLRingQueueHeader* header = (SMALLRingQueueHeader*)mmap(nullptr, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
             if (header != MAP_FAILED) {
                 shm_ptr_ = header;
+                slot_count_ = header->slot_size.load(std::memory_order_relaxed);
                 if (create) {
                     sem_init(&header->sem, 1, 0);
                     header->slot_size.store(slot_count_, std::memory_order_relaxed);
@@ -34,10 +48,14 @@ void ShmCreator::create_shm(bool create) {
             }
             break;
         case SlotSize::SIZE_1KB:
-            total_size_ = sizeof(MEDIUMRingQueueHeader) + slot_count_ * sizeof(MEDIUMDataSlot);
+            if (create) {
+                total_size_ = sizeof(MEDIUMRingQueueHeader) + slot_count_ * sizeof(MEDIUMDataSlot);
+                ftruncate(shm_fd_, total_size_);
+            }
             MEDIUMRingQueueHeader* header = (MEDIUMRingQueueHeader*)mmap(nullptr, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
             if (header != MAP_FAILED) {
                 shm_ptr_ = header;
+                slot_count_ = header->slot_size.load(std::memory_order_relaxed);
                 if (create) {
                     sem_init(&header->sem, 1, 0);
                     header->slot_size.store(slot_count_, std::memory_order_relaxed);
@@ -46,10 +64,14 @@ void ShmCreator::create_shm(bool create) {
             }
             break;
         case SlotSize::SIZE_256KB:
-            total_size_ = sizeof(LARGERingQueueHeader) + slot_count_ * sizeof(LARGEDataSlot);
+            if (create) {
+                total_size_ = sizeof(LARGERingQueueHeader) + slot_count_ * sizeof(LARGEDataSlot);
+                ftruncate(shm_fd_, total_size_);
+            }
             LARGERingQueueHeader* header = (LARGERingQueueHeader*)mmap(nullptr, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
             if (header != MAP_FAILED) {
                 shm_ptr_ = header;
+                slot_count_ = header->slot_size.load(std::memory_order_relaxed);
                 if (create) {
                     sem_init(&header->sem, 1, 0);
                     header->slot_size.store(slot_count_, std::memory_order_relaxed);

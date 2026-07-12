@@ -15,7 +15,7 @@ namespace MulProcess {
 typedef struct {
     std::atomic<uint8_t> slice_id;  // 切片id
     std::atomic<uint8_t> slice_count;  // 切片数量
-    std::atomic<uint8_t> commit;  // 提交标志位
+    std::atomic<bool> commit;  // 提交标志位
     std::atomic<uint8_t> modify_id;  // 修改者id
     uint8_t data[SMALL_DATA_SLOT_SIZE];
 }SMALLDataSlot;
@@ -23,7 +23,7 @@ typedef struct {
 typedef struct {
     std::atomic<uint8_t> slice_id;  // 切片id
     std::atomic<uint8_t> slice_count;  // 切片数量
-    std::atomic<uint8_t> commit;  // 提交标志位
+    std::atomic<bool> commit;  // 提交标志位
     std::atomic<uint8_t> modify_id;  // 修改者id
     uint8_t data[MEDIUM_DATA_SLOT_SIZE];
 }MEDIUMDataSlot;
@@ -31,7 +31,7 @@ typedef struct {
 typedef struct {
     std::atomic<uint8_t> slice_id;  // 切片id
     std::atomic<uint8_t> slice_count;  // 切片数量
-    std::atomic<uint8_t> commit;  // 提交标志位
+    std::atomic<bool> commit;  // 提交标志位
     std::atomic<uint8_t> modify_id;  // 修改者id
     uint8_t data[LARGE_DATA_SLOT_SIZE];
 }LARGEDataSlot;
