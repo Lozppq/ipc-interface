@@ -20,12 +20,12 @@ ShmCreator::~ShmCreator() {
     close();
 }
 
-void ShmCreator::create_shm(bool create) {
+bool ShmCreator::create_shm(bool create) {
     if (!create) {
         struct stat st;
-        if (fstat(shm_fd_, &st) != 0) {
-            printf("ShmCreator: fstat failed\n");
-            return;
+        if (fstat(shm_fd_, &st) != 0 || st.st_size == 0) {
+            printf("ShmCreator: fstat failed, st.st_size = %ld\n", st.st_size);
+            return false;
         }
         total_size_ = static_cast<uint32_t>(st.st_size);
     }
@@ -39,12 +39,12 @@ void ShmCreator::create_shm(bool create) {
             SMALLRingQueueHeader* header = (SMALLRingQueueHeader*)mmap(nullptr, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
             if (header != MAP_FAILED) {
                 shm_ptr_ = header;
-                slot_count_ = header->slot_size.load(std::memory_order_relaxed);
                 if (create) {
                     sem_init(&header->sem, 1, 0);
                     header->slot_size.store(slot_count_, std::memory_order_relaxed);
-                    header->flag.store(Define::BitEnum::BIT0, std::memory_order_relaxed);
+                    header->flag.store(Define::BitEnum::BIT0 | Define::BitEnum::BIT1, std::memory_order_relaxed);
                 }
+                return true;
             }
             break;
         case SlotSize::SIZE_1KB:
@@ -55,12 +55,12 @@ void ShmCreator::create_shm(bool create) {
             MEDIUMRingQueueHeader* header = (MEDIUMRingQueueHeader*)mmap(nullptr, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
             if (header != MAP_FAILED) {
                 shm_ptr_ = header;
-                slot_count_ = header->slot_size.load(std::memory_order_relaxed);
                 if (create) {
                     sem_init(&header->sem, 1, 0);
                     header->slot_size.store(slot_count_, std::memory_order_relaxed);
-                    header->flag.store(Define::BitEnum::BIT0, std::memory_order_relaxed);
+                    header->flag.store(Define::BitEnum::BIT0 | Define::BitEnum::BIT1, std::memory_order_relaxed);
                 }
+                return true;
             }
             break;
         case SlotSize::SIZE_256KB:
@@ -71,28 +71,29 @@ void ShmCreator::create_shm(bool create) {
             LARGERingQueueHeader* header = (LARGERingQueueHeader*)mmap(nullptr, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
             if (header != MAP_FAILED) {
                 shm_ptr_ = header;
-                slot_count_ = header->slot_size.load(std::memory_order_relaxed);
                 if (create) {
                     sem_init(&header->sem, 1, 0);
                     header->slot_size.store(slot_count_, std::memory_order_relaxed);
-                    header->flag.store(Define::BitEnum::BIT0, std::memory_order_relaxed);
+                    header->flag.store(Define::BitEnum::BIT0 | Define::BitEnum::BIT1, std::memory_order_relaxed);
                 }
+                return true;
             }
             break;
         default:
             printf("ShmCreator: create failed, slot_count_ = %d\n", slot_count_);
-            return;
+            break;
     }
+    return false;
 }
 
 bool ShmCreator::open() {
     shm_fd_ = shm_open(shm_name_.c_str(), O_CREAT | O_RDWR | O_EXCL, 0666);
     if (shm_fd_ >= 0) {
-        create_shm(true);
+        return create_shm(true);
     } else {
         shm_fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0666);
         if (shm_fd_ >= 0) {
-            create_shm(false);
+            return create_shm(false);
         } else {
             printf("ShmCreator: open failed, shm_fd_ = %d\n", shm_fd_);
         }
@@ -122,7 +123,7 @@ bool ShmCreator::valid() const {
 }
 
 int ShmCreator::send(const std::vector<uint8_t>& msg) {
-    if (!valid() || msg.empty() || (shm_ptr_->flag.load(std::memory_order_relaxed) & Define::BitEnum::BIT0) == 0) {
+    if (!valid() || msg.empty() || (shm_ptr_->flag.load(std::memory_order_acquire) & Define::BitEnum::BIT0) == 0) {
         return -1;
     }
     
@@ -130,7 +131,9 @@ int ShmCreator::send(const std::vector<uint8_t>& msg) {
 }
 
 uint32_t ShmCreator::recv(std::vector<uint8_t>& buf) {
-    (void)buf;
+    if (!valid() || (shm_ptr_->flag.load(std::memory_order_acquire) & Define::BitEnum::BIT1) == 0) {
+        return 0;
+    }
     return 0;
 }
 

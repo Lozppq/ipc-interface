@@ -47,6 +47,7 @@ typedef struct {
     std::atomic<uint32_t> slot_size; // 数据区大小
     std::atomic<uint32_t> flag; // 标志位
     // bit0：1允许发送，0不允许发送
+    // bit1：1允许接收，0不允许接收
     SMALLDataSlot data[0];  // 柔性数组成员，指向共享内存数据区
 } SMALLRingQueueHeader;
 
@@ -60,6 +61,7 @@ typedef struct {
     std::atomic<uint32_t> slot_size; // 数据区大小
     std::atomic<uint32_t> flag; // 标志位
     // bit0：1允许发送，0不允许发送
+    // bit1：1允许接收，0不允许接收
     MEDIUMDataSlot data[0];  // 柔性数组成员，指向共享内存数据区
 } MEDIUMRingQueueHeader;
 
@@ -73,6 +75,7 @@ typedef struct {
     std::atomic<uint32_t> slot_size; // 数据区大小
     std::atomic<uint32_t> flag; // 标志位
     // bit0：1允许发送，0不允许发送
+    // bit1：1允许接收，0不允许接收
     LARGEDataSlot data[0];  // 柔性数组成员，指向共享内存数据区
 } LARGERingQueueHeader;
 
@@ -161,7 +164,7 @@ private:
     /**
      * @brief 创建共享内存结构体
      */
-     void create_shm(bool create);
+    bool create_shm(bool create);
     
     /**
      * @brief 删除共享内存
