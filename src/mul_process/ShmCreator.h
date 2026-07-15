@@ -91,9 +91,9 @@ typedef struct {
 }ClientStatusInfo;
 
 /**
-* @brief 可以支持的数据区大小枚举
-*/
-enum class SlotSize : uint32_t {
+ * @brief 支持的数据区大小（字节）
+ */
+enum : uint32_t {
     SIZE_64B = 64,
     SIZE_1KB = 1024,
     SIZE_256KB = 256 * 1024,
@@ -105,7 +105,7 @@ public:
      * @brief 构造函数
      * @param name 共享内存名称
      */
-    ShmCreator(const std::string& name, SlotSize size = SlotSize::SIZE_64B, uint32_t slot_count = 1024);
+    ShmCreator(const std::string& name, uint32_t size = SIZE_64B, uint32_t slot_count = 1024);
     
     /**
      * @brief 析构函数，自动调用 close()
@@ -173,7 +173,7 @@ private:
 
 private:
     std::string shm_name_;
-    SlotSize slot_size_;
+    uint32_t slot_size_;
     uint32_t slot_count_;
     // 共享内存总大小
     uint32_t total_size_;

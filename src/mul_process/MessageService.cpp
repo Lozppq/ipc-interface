@@ -31,7 +31,7 @@ MessageService& MessageService::getInstance() {
     return instance;
 }
 
-bool MessageService::init(const char* shm_name, ShmManager::QueueSize size, bool create) {
+bool MessageService::init(const char* shm_name, uint32_t size, bool create) {
     if (initialized_) {
         return true;
     }
@@ -39,7 +39,7 @@ bool MessageService::init(const char* shm_name, ShmManager::QueueSize size, bool
         return false;
     }
 
-    shm_ = std::make_unique<ShmManager>(shm_name);
+    shm_ = std::make_unique<ShmCreator>(shm_name);
     if (!shm_->open(size, create)) {
         shm_.reset();
         return false;

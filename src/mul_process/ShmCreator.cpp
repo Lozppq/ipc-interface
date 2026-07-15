@@ -13,7 +13,7 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-ShmCreator::ShmCreator(const std::string& name, SlotSize size, uint32_t slot_count) : shm_name_(name), slot_size_(size), slot_count_(slot_count), total_size_(0) {
+ShmCreator::ShmCreator(const std::string& name, uint32_t size, uint32_t slot_count) : shm_name_(name), slot_size_(size), slot_count_(slot_count), total_size_(0) {
     
 }
 
@@ -32,7 +32,7 @@ bool ShmCreator::create_shm(bool create) {
     }
 
     switch (slot_size_) {
-        case SlotSize::SIZE_64B:
+        case SIZE_64B:
             if (create) {
                 total_size_ = sizeof(SMALLRingQueueHeader) + slot_count_ * sizeof(SMALLDataSlot);
                 ftruncate(shm_fd_, total_size_);
@@ -45,14 +45,11 @@ bool ShmCreator::create_shm(bool create) {
                     header->slot_size.store(slot_size_, std::memory_order_relaxed);
                     header->slot_count.store(slot_count_, std::memory_order_relaxed);
                     header->flag.store(Define::BitEnum::BIT0 | Define::BitEnum::BIT1, std::memory_order_relaxed);
-                } else {
-                    slot_size_ = header->slot_size.load(std::memory_order_acquire);
-                    slot_count_ = header->slot_count.load(std::memory_order_acquire);
                 }
                 return true;
             }
             break;
-        case SlotSize::SIZE_1KB:
+        case SIZE_1KB:
             if (create) {
                 total_size_ = sizeof(MEDIUMRingQueueHeader) + slot_count_ * sizeof(MEDIUMDataSlot);
                 ftruncate(shm_fd_, total_size_);
@@ -65,14 +62,11 @@ bool ShmCreator::create_shm(bool create) {
                     header->slot_size.store(slot_size_, std::memory_order_relaxed);
                     header->slot_count.store(slot_count_, std::memory_order_relaxed);
                     header->flag.store(Define::BitEnum::BIT0 | Define::BitEnum::BIT1, std::memory_order_relaxed);
-                } else {
-                    slot_size_ = header->slot_size.load(std::memory_order_acquire);
-                    slot_count_ = header->slot_count.load(std::memory_order_acquire);
                 }
                 return true;
             }
             break;
-        case SlotSize::SIZE_256KB:
+        case SIZE_256KB:
             if (create) {
                 total_size_ = sizeof(LARGERingQueueHeader) + slot_count_ * sizeof(LARGEDataSlot);
                 ftruncate(shm_fd_, total_size_);
@@ -85,9 +79,6 @@ bool ShmCreator::create_shm(bool create) {
                     header->slot_size.store(slot_size_, std::memory_order_relaxed);
                     header->slot_count.store(slot_count_, std::memory_order_relaxed);
                     header->flag.store(Define::BitEnum::BIT0 | Define::BitEnum::BIT1, std::memory_order_relaxed);
-                } else {
-                    slot_size_ = header->slot_size.load(std::memory_order_acquire);
-                    slot_count_ = header->slot_count.load(std::memory_order_acquire);
                 }
                 return true;
             }

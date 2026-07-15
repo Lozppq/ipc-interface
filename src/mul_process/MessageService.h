@@ -8,7 +8,7 @@
 
 #include "../model/MessageThread.h"
 #include "ReceiveWork.h"
-#include "ShmManager.h"
+#include "ShmCreator.h"
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -26,7 +26,7 @@ public:
     MessageService(const MessageService&) = delete;
     MessageService& operator=(const MessageService&) = delete;
 
-    bool init(const char* shm_name, ShmManager::QueueSize size, bool create);
+    bool init(const char* shm_name, uint32_t size, bool create);
     bool isInitialized() const;
 
     int send(const std::vector<uint8_t>& msg);
@@ -46,7 +46,7 @@ private:
     ~MessageService();
 
 private:
-    std::unique_ptr<ShmManager> shm_;
+    std::unique_ptr<ShmCreator> shm_;
     ReceiveHandler receive_handler_;
     bool initialized_{false};
     bool receiving_{false};
