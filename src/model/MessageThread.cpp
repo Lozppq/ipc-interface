@@ -14,7 +14,8 @@
 namespace IpcInterface {
 namespace Model {
 
-MessageThread::MessageThread(size_t queue_size) : queue_(queue_size) {
+MessageThread::MessageThread(size_t queue_size, std::string name)
+    : ThreadBase(std::move(name)), queue_(queue_size) {
     sem_init(&sem_, 0, 0);
 }
 

@@ -8,6 +8,7 @@
 #pragma once
 
 #include <atomic>
+#include <string>
 #include <thread>
 
 namespace IpcInterface {
@@ -16,8 +17,9 @@ class ThreadBase {
 public:
     /**
      * @brief 构造函数
+     * @param name 工作线程名，Linux 最多 15 字符；空串表示不设置
      */
-    ThreadBase();
+    explicit ThreadBase(std::string name = {});
     
     /**
      * @brief 析构函数，确保线程停止
@@ -75,11 +77,12 @@ private:
      * @brief 线程入口函数，封装初始化和循环逻辑
      */
     void threadFunc();
+    void applyThreadName();
 
-private:
-    std::thread thread_;           // 线程对象
-    std::thread::id worker_thread_id_; // 工作线程ID
-    std::atomic<bool> running_{false}; // 运行标志位
+    std::thread thread_;
+    std::thread::id worker_thread_id_;
+    std::atomic<bool> running_{false};
+    std::string thread_name_;
 };
 
 } // namespace Model

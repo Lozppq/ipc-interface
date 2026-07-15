@@ -9,7 +9,7 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-MessageService::MessageService() : MessageThread() {
+MessageService::MessageService() : MessageThread(1024, "MsgService") {
     receive_handler_ = [this](std::shared_ptr<TagReceiveMessage> msg) {
         receive(msg);
     };

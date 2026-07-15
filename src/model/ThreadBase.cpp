@@ -7,13 +7,26 @@
 
 #include "ThreadBase.h"
 
+#if defined(__linux__)
+#include <pthread.h>
+#endif
+
 namespace IpcInterface {
 namespace Model {
 
-ThreadBase::ThreadBase() {}
+ThreadBase::ThreadBase(std::string name) : thread_name_(std::move(name)) {}
 
 ThreadBase::~ThreadBase() {
     stop();
+}
+
+void ThreadBase::applyThreadName() {
+    if (thread_name_.empty()) {
+        return;
+    }
+#if defined(__linux__)
+    pthread_setname_np(pthread_self(), thread_name_.substr(0, 15).c_str());
+#endif
 }
 
 void ThreadBase::start() {
@@ -52,6 +65,7 @@ bool ThreadBase::isInWorkerThread() const {
 
 void ThreadBase::threadFunc() {
     worker_thread_id_ = std::this_thread::get_id();
+    applyThreadName();
     OnThreadInit();
     // 循环执行 Run()，直到 running_ 被设置为 false
     while (isRunning()) {

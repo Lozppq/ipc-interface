@@ -45,6 +45,7 @@ typedef struct {
     std::atomic<uint32_t> head;  // 队头指针
     std::atomic<uint32_t> tail;  // 队尾指针
     std::atomic<uint32_t> slot_size; // 数据区大小
+    std::atomic<uint32_t> slot_count; // 数据区数量
     std::atomic<uint32_t> flag; // 标志位
     // bit0：1允许发送，0不允许发送
     // bit1：1允许接收，0不允许接收
@@ -155,10 +156,9 @@ public:
 
     /**
      * @brief 判断队列是否已满
-     * @param len 待写入数据长度
      * @return 满返回true，否则返回false
      */
-    bool is_full(uint32_t len);
+    bool is_full();
 
 private:
     /**

@@ -23,8 +23,9 @@ public:
     /**
      * @brief 构造函数
      * @param queue_size 任务队列容量，默认1024
+     * @param name 工作线程名
      */
-    explicit MessageThread(size_t queue_size = 1024);
+    explicit MessageThread(size_t queue_size = 1024, std::string name = {});
     
     /**
      * @brief 析构函数，停止线程并销毁信号量
