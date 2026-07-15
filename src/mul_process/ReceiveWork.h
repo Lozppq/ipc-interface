@@ -19,7 +19,7 @@ struct TagReceiveMessage {
     std::vector<uint8_t> data;
 };
 
-class ReceiveWork : public MessageThread {
+class ReceiveWork : public Model::MessageThread {
 public:
     using ReceiveHandler = std::function<void(std::shared_ptr<TagReceiveMessage>)>;
 

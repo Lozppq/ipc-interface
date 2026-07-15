@@ -18,7 +18,7 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-class MessageService : public MessageThread {
+class MessageService : public Model::MessageThread {
 public:
     using ReceiveHandler = ReceiveWork::ReceiveHandler;
     static MessageService& getInstance();
