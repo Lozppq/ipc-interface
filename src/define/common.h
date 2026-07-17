@@ -40,5 +40,23 @@ enum class BitEnum : uint32_t {
     BIT31 = 1u << 31,
 };
 
+// shm_open 名称前缀（Linux 下对象在 /dev/shm/，不能改目录，只能约定名字）
+constexpr const char* kPrefix = "/ipc_";
+
+// 各进程消息队列共享内存名（下标可与进程角色对应）
+constexpr const char* kShmNames[] = {
+    "/ipc_ui",
+    "/ipc_daemon",
+    "/ipc_worker",
+};
+
+constexpr uint32_t kShmNameCount = sizeof(kShmNames) / sizeof(kShmNames[0]);
+
+// 便于按名字取用
+constexpr const char* UI     = kShmNames[0];
+constexpr const char* Daemon = kShmNames[1];
+constexpr const char* Worker = kShmNames[2];
+
+
 } // namespace Define
 } // namespace IpcInterface

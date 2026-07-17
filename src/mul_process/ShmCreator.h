@@ -150,6 +150,12 @@ public:
      */
     bool is_full();
 
+    /**
+     * @brief 获取共享内存名称
+     * @return 共享内存名称
+     */
+    std::string get_shm_name();  
+
 private:
     /**
      * @brief 创建共享内存结构体

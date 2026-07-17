@@ -9,7 +9,7 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-MessageService::MessageService() : MessageThread(1024, "MsgService") {
+MessageService::MessageService(size_t queue_size, std::string name) : MessageThread(queue_size, name) {
     receive_handler_ = [this](std::shared_ptr<TagReceiveMessage> msg) {
         receive(msg);
     };
@@ -40,7 +40,7 @@ bool MessageService::init(const char* shm_name, uint32_t size, bool create) {
     }
 
     shm_ = std::make_unique<ShmCreator>(shm_name);
-    if (!shm_->open(size, create)) {
+    if (!shm_->open()) {
         shm_.reset();
         return false;
     }

@@ -21,9 +21,8 @@ namespace MulProcess {
 
 
 typedef struct {
-    std::string shm_name; // 共享内存名称
-    std::string receiver; // 接收者
-    std::string senders; // 发送者
+    uint32_t receiver_pid; // 接收者pid
+    uint32_t senders_pid; // 发送者pid，0默认有多个发送者
     ShmCreator shm; // 共享内存
 } ShmInfo;
 
@@ -33,8 +32,8 @@ typedef struct {
 typedef struct {
     std::atomic<uint32_t> send_tail;  // 维护一个最后发送消息的尾部索引
     std::atomic<uint32_t> send_head;  // 维护一个最后发送消息的头部索引
-    std::atomic<uint8_t> send_status;  // 维护一个最后发送消息的状态
-    std::atomic<uint8_t> send_object_id;  // 维护一个最后发送消息的对象id
+    std::atomic<uint32_t> send_to_pid;  // 维护一个本进程最后发送消息给其他进程的pid
+    std::atomic<bool> send_status;  // 维护一个最后发送消息的状态
 }ClientStatusInfo;
 
 class ShmManager : public Model::MessageThread {
@@ -50,16 +49,22 @@ public:
      */
     ~ShmManager();
 
+    /**
+     * @brief 单例类
+     * @return 单例类实例
+     */
+    static ShmManager& getInstance();
+
     ShmManager(const ShmManager&) = delete;
     ShmManager& operator=(const ShmManager&) = delete;
 
     
-
-private:
+protected:
+    void OnThreadInit() override;
 
 private:
     std::vector<ShmInfo> shmInfos_;
-    std::vector<ClientStatusInfo> clientStatusInfos_;
+    std::vector<ClientStatusInfo*> clientStatusInfos_;
 };
 
 } // namespace MulProcess

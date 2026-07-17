@@ -45,6 +45,12 @@ bool ShmCreator::create_shm(bool create) {
                     header->slot_size.store(slot_size_, std::memory_order_relaxed);
                     header->slot_count.store(slot_count_, std::memory_order_relaxed);
                     header->flag.store(Define::BitEnum::BIT0 | Define::BitEnum::BIT1, std::memory_order_relaxed);
+                } else {
+                    if (header->flag.load(std::memory_order_acquire) == 0) {
+                        return false;
+                    }
+                    slot_size_ = header->slot_size.load(std::memory_order_acquire);
+                    slot_count_ = header->slot_count.load(std::memory_order_acquire);
                 }
                 return true;
             }
@@ -62,6 +68,12 @@ bool ShmCreator::create_shm(bool create) {
                     header->slot_size.store(slot_size_, std::memory_order_relaxed);
                     header->slot_count.store(slot_count_, std::memory_order_relaxed);
                     header->flag.store(Define::BitEnum::BIT0 | Define::BitEnum::BIT1, std::memory_order_relaxed);
+                } else {
+                    if (header->flag.load(std::memory_order_acquire) == 0) {
+                        return false;
+                    }
+                    slot_size_ = header->slot_size.load(std::memory_order_acquire);
+                    slot_count_ = header->slot_count.load(std::memory_order_acquire);
                 }
                 return true;
             }
@@ -79,6 +91,12 @@ bool ShmCreator::create_shm(bool create) {
                     header->slot_size.store(slot_size_, std::memory_order_relaxed);
                     header->slot_count.store(slot_count_, std::memory_order_relaxed);
                     header->flag.store(Define::BitEnum::BIT0 | Define::BitEnum::BIT1, std::memory_order_relaxed);
+                } else {
+                    if (header->flag.load(std::memory_order_acquire) == 0) {
+                        return false;
+                    }
+                    slot_size_ = header->slot_size.load(std::memory_order_acquire);
+                    slot_count_ = header->slot_count.load(std::memory_order_acquire);
                 }
                 return true;
             }
@@ -243,6 +261,10 @@ bool ShmCreator::is_empty() {
 
 bool ShmCreator::is_full() {
     return (shm_ptr_->tail.load(std::memory_order_acquire) + 1) % slot_count == shm_ptr_->head.load(std::memory_order_acquire);
+}
+
+std::string ShmCreator::get_shm_name() {
+    return shm_name_;
 }
 
 } // namespace MulProcess

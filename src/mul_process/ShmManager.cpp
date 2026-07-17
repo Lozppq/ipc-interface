@@ -7,11 +7,29 @@
  */
 
 #include "ShmManager.h"
-
+#include "../define/common.h"
+#include "ShmCreator.h"
 
 namespace IpcInterface {
 namespace MulProcess {
 
+ShmManager::ShmManager() {
+
+}
+
+ShmManager::~ShmManager() {
+
+}
+
+
+ShmManager& ShmManager::getInstance() {
+    static ShmManager instance;
+    return instance;
+}
+
+void ShmManager::OnThreadInit() {
+    
+}
 
 
 } // namespace MulProcess

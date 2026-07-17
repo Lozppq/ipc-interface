@@ -23,6 +23,9 @@ public:
     using ReceiveHandler = ReceiveWork::ReceiveHandler;
     static MessageService& getInstance();
 
+    MessageService(size_t queue_size = 1024, std::string name = {});
+    ~MessageService();
+
     MessageService(const MessageService&) = delete;
     MessageService& operator=(const MessageService&) = delete;
 
@@ -40,10 +43,6 @@ public:
 
 protected:
     void OnThreadInit() override;
-
-private:
-    MessageService();
-    ~MessageService();
 
 private:
     std::unique_ptr<ShmCreator> shm_;
