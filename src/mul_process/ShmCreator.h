@@ -81,16 +81,6 @@ typedef struct {
 } LARGERingQueueHeader;
 
 /**
- * @brief 客户端状态信息结构体
-**/
-typedef struct {
-    std::atomic<uint32_t> send_tail;  // 维护一个最后发送消息的尾部索引
-    std::atomic<uint32_t> send_head;  // 维护一个最后发送消息的头部索引
-    std::atomic<uint8_t> send_status;  // 维护一个最后发送消息的状态
-    std::atomic<uint8_t> send_object_id;  // 维护一个最后发送消息的对象id
-}ClientStatusInfo;
-
-/**
  * @brief 支持的数据区大小（字节）
  */
 enum : uint32_t {

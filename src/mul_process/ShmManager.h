@@ -13,12 +13,29 @@
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
-#include <map>
 #include <string>
-#include <memory>
+
 
 namespace IpcInterface {
 namespace MulProcess {
+
+
+typedef struct {
+    std::string shm_name; // 共享内存名称
+    std::string receiver; // 接收者
+    std::string senders; // 发送者
+    ShmCreator shm; // 共享内存
+} ShmInfo;
+
+/**
+ * @brief 客户端状态信息结构体
+**/
+typedef struct {
+    std::atomic<uint32_t> send_tail;  // 维护一个最后发送消息的尾部索引
+    std::atomic<uint32_t> send_head;  // 维护一个最后发送消息的头部索引
+    std::atomic<uint8_t> send_status;  // 维护一个最后发送消息的状态
+    std::atomic<uint8_t> send_object_id;  // 维护一个最后发送消息的对象id
+}ClientStatusInfo;
 
 class ShmManager : public Model::MessageThread {
 public:
@@ -41,7 +58,8 @@ public:
 private:
 
 private:
-    std::unordered_map<std::string, std::unique_ptr<ShmCreator>> shm_map_; // 共享内存map
+    std::vector<ShmInfo> shmInfos_;
+    std::vector<ClientStatusInfo> clientStatusInfos_;
 };
 
 } // namespace MulProcess
