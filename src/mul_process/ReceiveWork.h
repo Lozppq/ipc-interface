@@ -23,7 +23,7 @@ class ReceiveWork : public Model::MessageThread {
 public:
     using ReceiveHandler = std::function<void(std::shared_ptr<TagReceiveMessage>)>;
 
-    ReceiveWork(ShmCreator* shm, ReceiveHandler handler);
+    ReceiveWork(ShmCreator* shm, ReceiveHandler handler, std::string name = {});
     ~ReceiveWork();
     void setReceiveHandler(ReceiveHandler handler);
 
@@ -38,6 +38,7 @@ private:
     ShmCreator* shm_{nullptr};
     ReceiveHandler receive_handler_;
     std::vector<uint8_t> buf_msg_;
+    std::string name_;
 };
 
 } // namespace MulProcess

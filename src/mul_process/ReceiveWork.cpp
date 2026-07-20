@@ -8,8 +8,8 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-ReceiveWork::ReceiveWork(ShmCreator* shm, ReceiveHandler handler)
-    : MessageThread(1024, "RecvWork"), shm_(shm), receive_handler_(handler) {}
+ReceiveWork::ReceiveWork(ShmCreator* shm, ReceiveHandler handler, std::string name)
+    : MessageThread(1024, std::move(name)), shm_(shm), receive_handler_(handler), name_(std::move(name)) {}
 
 ReceiveWork::~ReceiveWork() {
     receive_handler_ = nullptr;

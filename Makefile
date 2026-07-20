@@ -33,6 +33,7 @@ LIB_SRCS := \
 	src/model/MessageThread.cpp \
 	src/mul_process/ShmManager.cpp \
 	src/mul_process/ReceiveWork.cpp \
+	src/mul_process/SendWork.cpp \
 	src/mul_process/MessageService.cpp
 
 LIB_OBJS := $(patsubst src/%.cpp,$(BUILD_OBJ)/%.o,$(LIB_SRCS))
