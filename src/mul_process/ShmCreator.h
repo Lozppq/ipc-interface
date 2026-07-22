@@ -6,6 +6,11 @@
 
 #include <cstdint>
 #include <string>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <cstdio>
 
 namespace IpcInterface {
 namespace MulProcess {
@@ -67,6 +72,8 @@ protected:
     bool is_owner_;
     std::string shm_name_;
 };
+
+#include "ShmCreator.inl"
 
 } // namespace MulProcess
 } // namespace IpcInterface
