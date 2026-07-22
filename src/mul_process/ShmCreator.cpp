@@ -24,6 +24,11 @@ ShmCreator<T>::~ShmCreator() {
 }
 
 template<typename T>
+T* ShmCreator<T>::get_shm_ptr() const {
+    return shm_ptr_;
+}
+
+template<typename T>
 bool ShmCreator<T>::create_shm(bool create) {
     if (!create) {
         struct stat st;
@@ -32,14 +37,19 @@ bool ShmCreator<T>::create_shm(bool create) {
             return false;
         }
         total_size_ = static_cast<uint32_t>(st.st_size);
+    } else {
+        if (ftruncate(shm_fd_, total_size_) != 0) {
+            printf("ShmCreator: ftruncate failed, total_size_ = %d\n", total_size_);
+            return false;
+        }
     }
 
-    // 映射共享内存，按照T*类型映射
-    shm_ptr_ = reinterpret_cast<T*>(mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0));
-    if (shm_ptr_ == MAP_FAILED) {
-        printf("ShmCreator: mmap failed, shm_fd_ = %d\n", shm_fd_);
+    void* ptr = mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
+    if (ptr == MAP_FAILED) {   // 这里 ptr 和 MAP_FAILED 都是 void*，直接比
+        shm_ptr_ = NULL;
         return false;
     }
+    shm_ptr_ = static_cast<T*>(ptr);  // 只有成功才转
     return true;
 }
 
@@ -55,7 +65,7 @@ bool ShmCreator<T>::open(bool create) {
             if (shm_fd_ >= 0) {
                 return create_shm(false);
             } else {
-                printf("StreamShmCreator: open failed, shm_fd_ = %d\n", shm_fd_);
+                printf("ShmCreator: open failed, shm_fd_ = %d\n", shm_fd_);
             }
         }
     } else {
@@ -63,7 +73,7 @@ bool ShmCreator<T>::open(bool create) {
         if (shm_fd_ >= 0) {
             return create_shm(false);
         } else {
-            printf("StreamShmCreator: open failed, shm_fd_ = %d\n", shm_fd_);
+            printf("ShmCreator: open failed, shm_fd_ = %d\n", shm_fd_);
         }
     }
     return false;
@@ -79,19 +89,19 @@ void ShmCreator<T>::delete_shm() {
 
 template<typename T>
 void ShmCreator<T>::close() {
-    if (shm_ptr_ && shm_ptr_ != MAP_FAILED) {
-        munmap(shm_ptr_, total_size_);
+    if (shm_ptr_) {
+        munmap(static_cast<void*>(shm_ptr_), total_size_);
         shm_ptr_ = NULL;
     }
     if (shm_fd_ >= 0) {
-        ::close(shm_fd_);
+        ::close(shm_fd_);  // 这里 ::close 是全局命名空间中的 close
         shm_fd_ = -1;
     }
 }
 
 template<typename T>
 bool ShmCreator<T>::valid() const {
-    return shm_ptr_ && shm_ptr_ != MAP_FAILED;
+    return static_cast<void*>(shm_ptr_) && static_cast<void*>(shm_ptr_) != MAP_FAILED;
 }
 
 template<typename T>

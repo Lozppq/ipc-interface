@@ -64,6 +64,7 @@ typedef struct {
     std::atomic<uint32_t> head;  // 队头指针
     std::atomic<uint32_t> tail;  // 队尾指针
     std::atomic<uint32_t> slot_size; // 数据区大小
+    std::atomic<uint32_t> slot_count; // 数据区数量
     std::atomic<uint32_t> receiver_pid;  // 接收者pid
     std::atomic<uint32_t> senders_pid;  // 发送者pid，0默认有多个发送者
     std::atomic<uint32_t> flag; // 标志位
@@ -80,6 +81,7 @@ typedef struct {
     std::atomic<uint32_t> head;  // 队头指针
     std::atomic<uint32_t> tail;  // 队尾指针
     std::atomic<uint32_t> slot_size; // 数据区大小
+    std::atomic<uint32_t> slot_count; // 数据区数量
     std::atomic<uint32_t> receiver_pid;  // 接收者pid
     std::atomic<uint32_t> senders_pid;  // 发送者pid，0默认有多个发送者
     std::atomic<uint32_t> flag; // 标志位
@@ -116,7 +118,7 @@ public:
      * @brief 构造函数
      * @param name 共享内存名称
      */
-    StreamShmCreator(const std::string& name, uint32_t size = SIZE_64B, uint32_t slot_count = 1024);
+    StreamShmCreator(const std::string& name, uint32_t slot_size = SIZE_64B, uint32_t slot_count = 1024);
     
     /**
      * @brief 析构函数，自动调用 close()

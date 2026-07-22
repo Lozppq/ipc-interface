@@ -11,9 +11,9 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-StreamShmCreator::StreamShmCreator(const std::string& name, uint32_t size, uint32_t slot_count) 
+StreamShmCreator::StreamShmCreator(const std::string& name, uint32_t slot_size, uint32_t slot_count) 
     : shm_name_(name), 
-    slot_size_(size), 
+    slot_size_(slot_size), 
     slot_count_(slot_count), 
     total_size_(0), 
     client_info_(NULL),
@@ -35,86 +35,34 @@ bool StreamShmCreator::create_shm(bool create) {
             return false;
         }
         total_size_ = static_cast<uint32_t>(st.st_size);
+    } else {
+        total_size_ = sizeof(SMALLRingQueueHeader) + slot_count_ * (offsetof(SMALLDataSlot, data) + slot_size_);
+        ftruncate(shm_fd_, total_size_);
     }
 
-    switch (slot_size_) {
-        case SIZE_64B:
-            if (create) {
-                total_size_ = sizeof(SMALLRingQueueHeader) + slot_count_ * sizeof(SMALLDataSlot);
-                ftruncate(shm_fd_, total_size_);
-            }
-            SMALLRingQueueHeader* header = (SMALLRingQueueHeader*)mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
-            if (header != MAP_FAILED) {
-                shm_ptr_ = header;
-                if (create) {
-                    sem_init(&header->sem, 1, 0);
-                    header->slot_size.store(slot_size_, std::memory_order_relaxed);
-                    header->slot_count.store(slot_count_, std::memory_order_relaxed);
-                    header->receiver_pid.store(0, std::memory_order_relaxed);
-                    header->flag.store(Define::BIT0 | Define::BIT1, std::memory_order_relaxed);
-                } else {
-                    if (header->flag.load(std::memory_order_acquire) == 0) {
-                        return false;
-                    }
-                    slot_size_ = header->slot_size.load(std::memory_order_acquire);
-                    slot_count_ = header->slot_count.load(std::memory_order_acquire);
-                }
-                return true;
-            }
-            break;
-        case SIZE_1KB:
-            if (create) {
-                total_size_ = sizeof(MEDIUMRingQueueHeader) + slot_count_ * sizeof(MEDIUMDataSlot);
-                ftruncate(shm_fd_, total_size_);
-            }
-            MEDIUMRingQueueHeader* header = (MEDIUMRingQueueHeader*)mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
-            if (header != MAP_FAILED) {
-                shm_ptr_ = header;
-                if (create) {
-                    sem_init(&header->sem, 1, 0);
-                    header->slot_size.store(slot_size_, std::memory_order_relaxed);
-                    header->slot_count.store(slot_count_, std::memory_order_relaxed);
-                    header->receiver_pid.store(0, std::memory_order_relaxed);
-                    header->flag.store(Define::BIT0 | Define::BIT1, std::memory_order_relaxed);
-                } else {
-                    if (header->flag.load(std::memory_order_acquire) == 0) {
-                        return false;
-                    }
-                    slot_size_ = header->slot_size.load(std::memory_order_acquire);
-                    slot_count_ = header->slot_count.load(std::memory_order_acquire);
-                }
-                return true;
-            }
-            break;
-        case SIZE_256KB:
-            if (create) {
-                total_size_ = sizeof(LARGERingQueueHeader) + slot_count_ * sizeof(LARGEDataSlot);
-                ftruncate(shm_fd_, total_size_);
-            }
-            LARGERingQueueHeader* header = (LARGERingQueueHeader*)mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
-            if (header != MAP_FAILED) {
-                shm_ptr_ = header;
-                if (create) {
-                    sem_init(&header->sem, 1, 0);
-                    header->slot_size.store(slot_size_, std::memory_order_relaxed);
-                    header->slot_count.store(slot_count_, std::memory_order_relaxed);
-                    header->receiver_pid.store(0, std::memory_order_relaxed);
-                    header->flag.store(Define::BIT0 | Define::BIT1, std::memory_order_relaxed);
-                } else {
-                    if (header->flag.load(std::memory_order_acquire) == 0) {
-                        return false;
-                    }
-                    slot_size_ = header->slot_size.load(std::memory_order_acquire);
-                    slot_count_ = header->slot_count.load(std::memory_order_acquire);
-                }
-                return true;
-            }
-            break;
-        default:
-            printf("StreamShmCreator: create failed, slot_count_ = %d\n", slot_count_);
-            break;
+    void* ptr = mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
+    if (ptr == MAP_FAILED) {
+        shm_ptr_ = NULL;
+        printf("StreamShmCreator: mmap failed, total_size_ = %d\n", total_size_);
+        return false;
     }
-    return false;
+    shm_ptr_ = ptr;
+    SMALLRingQueueHeader* header = static_cast<SMALLRingQueueHeader*>(ptr);
+
+    if (create) {
+        sem_init(&header->sem, 1, 0);
+        header->slot_size.store(slot_size_, std::memory_order_relaxed);
+        header->slot_count.store(slot_count_, std::memory_order_relaxed);
+        header->receiver_pid.store(0, std::memory_order_relaxed);
+        header->flag.store(Define::BIT0 | Define::BIT1, std::memory_order_relaxed);
+    } else {
+        if (header->flag.load(std::memory_order_acquire) == 0) {
+            return false;
+        }
+        slot_size_ = header->slot_size.load(std::memory_order_acquire);
+        slot_count_ = header->slot_count.load(std::memory_order_acquire);
+    }
+    return true;
 }
 
 bool StreamShmCreator::open(bool create) {

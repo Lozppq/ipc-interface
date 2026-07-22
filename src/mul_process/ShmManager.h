@@ -9,6 +9,7 @@
 #pragma once
 #include "../model/MessageThread.h"
 #include "StreamShmCreator.h"
+#include "ShmCreator.h"
 #include <atomic>
 #include <cstdint>
 #include <unordered_map>

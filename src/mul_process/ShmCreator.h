@@ -19,6 +19,12 @@ public:
     ShmCreator& operator=(const ShmCreator&) = delete;
 
     /**
+     * @brief 获取共享内存指针
+     * @return 共享内存指针
+     */
+    T* get_shm_ptr() const;
+
+    /**
      * @brief 打开共享内存
      * @param create true=创建模式，false=仅打开模式
      * @return 成功返回true，失败返回false
