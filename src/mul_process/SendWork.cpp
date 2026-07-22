@@ -15,14 +15,13 @@ SendWork::~SendWork() {
     shm_ = NULL;
 }
 
-void SendWork::send(std::vector<uint8_t> msg, StreamShmCreator* shm, uint32_t to_pid) {
+void SendWork::send(std::vector<uint8_t> msg, StreamShmCreator* shm) {
     if (msg.empty()) {
         return;
     }
     auto tag = std::make_shared<TagSendMessage>();
     tag->data = std::move(msg);
     tag->shm = shm == NULL ? shm_ : shm;
-    tag->to_pid = to_pid;
     post([this, tag = std::move(tag)]() {
         SendMessage(tag);
     });
