@@ -7,7 +7,7 @@
 #pragma once
 
 #include "../model/MessageThread.h"
-#include "ShmCreator.h"
+#include "StreamShmCreator.h"
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -23,7 +23,7 @@ class ReceiveWork : public Model::MessageThread {
 public:
     using ReceiveHandler = std::function<void(std::shared_ptr<TagReceiveMessage>)>;
 
-    ReceiveWork(ShmCreator* shm, ReceiveHandler handler, std::string name = {});
+    ReceiveWork(StreamShmCreator* shm, ReceiveHandler handler, std::string name = {});
     ~ReceiveWork();
     void setReceiveHandler(ReceiveHandler handler);
 
@@ -35,7 +35,7 @@ protected:
     void ReceiveMessage();
 
 private:
-    ShmCreator* shm_{nullptr};
+    StreamShmCreator* shm_{NULL};
     ReceiveHandler receive_handler_;
     std::vector<uint8_t> buf_msg_;
     std::string name_;

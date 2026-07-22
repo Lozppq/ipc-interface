@@ -7,7 +7,7 @@
 #pragma once
 
 #include "../model/MessageThread.h"
-#include "ShmCreator.h"
+#include "StreamShmCreator.h"
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -17,25 +17,27 @@ namespace MulProcess {
 
 struct TagSendMessage {
     std::vector<uint8_t> data;
+    StreamShmCreator* shm;
+    uint32_t to_pid;
 };
 
 class SendWork : public Model::MessageThread {
 public:
-    explicit SendWork(ShmCreator* shm, std::string name = {});
+    explicit SendWork(StreamShmCreator* shm = NULL, std::string name = {});
     ~SendWork();
 
     SendWork(const SendWork&) = delete;
     SendWork& operator=(const SendWork&) = delete;
 
-    void send(std::shared_ptr<TagSendMessage> msg);
-    void send(std::vector<uint8_t> msg);
+    // 这里默认使用初始化的共享内存发送，如果初始化未设置共享内存则使用传入的共享内存发送,如果传入的共享内存仍为NULL则不发送
+    void send(std::vector<uint8_t> msg, StreamShmCreator* shm = NULL, uint32_t to_pid = 0);
 
 protected:
     void OnThreadInit() override;
-    void SendMessage(std::shared_ptr<TagSendMessage> msg);
+    void SendMessage(std::shared_ptr<TagSendMessage> tag);
 
 private:
-    ShmCreator* shm_{nullptr};
+    StreamShmCreator* shm_{NULL};
     std::string name_;
 };
 

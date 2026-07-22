@@ -8,36 +8,31 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-SendWork::SendWork(ShmCreator* shm, std::string name)
+SendWork::SendWork(StreamShmCreator* shm, std::string name)
     : MessageThread(1024, std::move(name)), shm_(shm), name_(std::move(name)) {}
 
 SendWork::~SendWork() {
-    shm_ = nullptr;
+    shm_ = NULL;
 }
 
-void SendWork::send(std::shared_ptr<TagSendMessage> msg) {
-    if (!msg || msg->data.empty()) {
-        return;
-    }
-    post([this, msg = std::move(msg)]() {
-        SendMessage(msg);
-    });
-}
-
-void SendWork::send(std::vector<uint8_t> msg) {
+void SendWork::send(std::vector<uint8_t> msg, StreamShmCreator* shm, uint32_t to_pid) {
     if (msg.empty()) {
         return;
     }
     auto tag = std::make_shared<TagSendMessage>();
     tag->data = std::move(msg);
-    send(std::move(tag));
+    tag->shm = shm == NULL ? shm_ : shm;
+    tag->to_pid = to_pid;
+    post([this, tag = std::move(tag)]() {
+        SendMessage(tag);
+    });
 }
 
-void SendWork::SendMessage(std::shared_ptr<TagSendMessage> msg) {
-    if (!isRunning() || !shm_ || !msg || msg->data.empty()) {
+void SendWork::SendMessage(std::shared_ptr<TagSendMessage> tag) {
+    if (!isRunning() || !tag || tag->data.empty() || !tag->shm) {
         return;
     }
-    shm_->send(msg->data);
+    tag->shm->send(tag->data);
 }
 
 void SendWork::OnThreadInit() {

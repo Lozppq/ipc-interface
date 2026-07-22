@@ -8,7 +8,7 @@
 
 #include "ShmManager.h"
 #include "../define/common.h"
-#include "ShmCreator.h"
+#include "StreamShmCreator.h"
 
 namespace IpcInterface {
 namespace MulProcess {

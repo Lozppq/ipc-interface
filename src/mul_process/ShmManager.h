@@ -8,7 +8,7 @@
 
 #pragma once
 #include "../model/MessageThread.h"
-#include "ShmCreator.h"
+#include "StreamShmCreator.h"
 #include <atomic>
 #include <cstdint>
 #include <unordered_map>
@@ -23,18 +23,8 @@ namespace MulProcess {
 typedef struct {
     uint32_t receiver_pid; // 接收者pid
     uint32_t senders_pid; // 发送者pid，0默认有多个发送者
-    ShmCreator shm; // 共享内存
+    StreamShmCreator shm; // 共享内存
 } ShmInfo;
-
-/**
- * @brief 客户端状态信息结构体
-**/
-typedef struct {
-    std::atomic<uint32_t> send_tail;  // 维护一个最后发送消息的尾部索引
-    std::atomic<uint32_t> send_head;  // 维护一个最后发送消息的头部索引
-    std::atomic<uint32_t> send_to_pid;  // 维护一个本进程最后发送消息给其他进程的pid
-    std::atomic<bool> send_status;  // 维护一个最后发送消息的状态
-}ClientStatusInfo;
 
 class ShmManager : public Model::MessageThread {
 public:

@@ -5,7 +5,7 @@
 namespace IpcInterface {
 namespace Define {
 // 每一个Bit为1的枚举值
-enum class BitEnum : uint32_t {
+enum : uint32_t {
     BIT0 = 1u << 0,
     BIT1 = 1u << 1,
     BIT2 = 1u << 2,
@@ -57,6 +57,19 @@ constexpr const char* UI     = kShmNames[0];
 constexpr const char* Daemon = kShmNames[1];
 constexpr const char* Worker = kShmNames[2];
 
+
+// 各个进程信息交互统计共享内存名称
+constexpr const char* kStatShmNames[] = {
+    "/ipc_stat_ui",
+    "/ipc_stat_daemon",
+    "/ipc_stat_worker",
+};
+
+constexpr uint32_t kStatShmNameCount = sizeof(kStatShmNames) / sizeof(kStatShmNames[0]);
+
+constexpr const char* StatUI = kStatShmNames[0];
+constexpr const char* StatDaemon = kStatShmNames[1];
+constexpr const char* StatWorker = kStatShmNames[2];
 
 } // namespace Define
 } // namespace IpcInterface
