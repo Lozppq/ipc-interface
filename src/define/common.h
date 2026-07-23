@@ -45,30 +45,30 @@ constexpr const char* kPrefix = "/ipc_";
 
 // 各进程消息队列共享内存名（下标可与进程角色对应）
 constexpr const char* kShmNames[] = {
-    "/ipc_ui",
     "/ipc_daemon",
+    "/ipc_ui",
     "/ipc_worker",
 };
 
 constexpr uint32_t kShmNameCount = sizeof(kShmNames) / sizeof(kShmNames[0]);
 
 // 便于按名字取用
-constexpr const char* UI     = kShmNames[0];
-constexpr const char* Daemon = kShmNames[1];
+constexpr const char* Daemon = kShmNames[0];
+constexpr const char* UI     = kShmNames[1];
 constexpr const char* Worker = kShmNames[2];
 
 
 // 各个进程信息交互统计共享内存名称
 constexpr const char* kStatShmNames[] = {
-    "/ipc_stat_ui",
     "/ipc_stat_daemon",
+    "/ipc_stat_ui",
     "/ipc_stat_worker",
 };
 
 constexpr uint32_t kStatShmNameCount = sizeof(kStatShmNames) / sizeof(kStatShmNames[0]);
 
-constexpr const char* StatUI = kStatShmNames[0];
-constexpr const char* StatDaemon = kStatShmNames[1];
+constexpr const char* StatDaemon = kStatShmNames[0];
+constexpr const char* StatUI = kStatShmNames[1];
 constexpr const char* StatWorker = kStatShmNames[2];
 
 } // namespace Define

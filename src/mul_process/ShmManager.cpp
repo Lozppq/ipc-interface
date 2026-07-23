@@ -13,7 +13,9 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-ShmManager::ShmManager() {
+ShmManager::ShmManager(const std::string& shm_name) 
+    : MessageThread(),
+    shm_name_(shm_name) {
 
 }
 
@@ -29,6 +31,14 @@ ShmManager& ShmManager::getInstance() {
 
 void ShmManager::OnThreadInit() {
     
+}
+
+void ShmManager::initShm() {
+    if (shm_name_ == Define::Daemon) {
+        // 守护进程需要初始化各个共享内存和客户端状态信息
+    } else {
+        // 其他进程只需要只读初始化各个共享内存
+    }
 }
 
 

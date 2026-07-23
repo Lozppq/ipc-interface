@@ -148,32 +148,16 @@ bool StreamShmCreator::is_empty() {
     if (!valid()) {
         return true;
     }
-    switch (slot_size_) {
-        case SIZE_64B:
-            return is_empty_impl(static_cast<SMALLRingQueueHeader*>(shm_ptr_));
-        case SIZE_1KB:
-            return is_empty_impl(static_cast<MEDIUMRingQueueHeader*>(shm_ptr_));
-        case SIZE_256KB:
-            return is_empty_impl(static_cast<LARGERingQueueHeader*>(shm_ptr_));
-        default:
-            return true;
-    }
+    auto* h = static_cast<SMALLRingQueueHeader*>(shm_ptr_);
+    return h->head.load(std::memory_order_acquire) == h->tail.load(std::memory_order_acquire);
 }
 
 bool StreamShmCreator::is_full() {
     if (!valid()) {
         return true;
     }
-    switch (slot_size_) {
-        case SIZE_64B:
-            return is_full_impl(static_cast<SMALLRingQueueHeader*>(shm_ptr_));
-        case SIZE_1KB:
-            return is_full_impl(static_cast<MEDIUMRingQueueHeader*>(shm_ptr_));
-        case SIZE_256KB:
-            return is_full_impl(static_cast<LARGERingQueueHeader*>(shm_ptr_));
-        default:
-            return true;
-    }
+    auto* h = static_cast<SMALLRingQueueHeader*>(shm_ptr_);
+    return (h->tail.load(std::memory_order_acquire) + 1) % slot_count_ == h->head.load(std::memory_order_acquire);
 }
 
 std::string StreamShmCreator::get_shm_name() {
@@ -188,19 +172,35 @@ void StreamShmCreator::set_flag(uint32_t flag) {
     if (!shm_ptr_) {
         return;
     }
-    switch (slot_size_) {
-        case SIZE_64B:
-            set_flag_impl(static_cast<SMALLRingQueueHeader*>(shm_ptr_), flag);
-            break;
-        case SIZE_1KB:
-            set_flag_impl(static_cast<MEDIUMRingQueueHeader*>(shm_ptr_), flag);
-            break;
-        case SIZE_256KB:
-            set_flag_impl(static_cast<LARGERingQueueHeader*>(shm_ptr_), flag);
-            break;
-        default:
-            break;
+    static_cast<SMALLRingQueueHeader*>(shm_ptr_)->flag.store(flag, std::memory_order_release);
+}
+
+uint32_t StreamShmCreator::get_receiver_pid() const {
+    if (!valid()) {
+        return 0;
     }
+    return static_cast<const SMALLRingQueueHeader*>(shm_ptr_)->receiver_pid.load(std::memory_order_acquire);
+}
+
+uint32_t StreamShmCreator::get_senders_pid() const {
+    if (!valid()) {
+        return 0;
+    }
+    return static_cast<const SMALLRingQueueHeader*>(shm_ptr_)->senders_pid.load(std::memory_order_acquire);
+}
+
+void StreamShmCreator::set_receiver_pid(uint32_t receiver_pid) {
+    if (!valid()) {
+        return;
+    }
+    static_cast<SMALLRingQueueHeader*>(shm_ptr_)->receiver_pid.store(receiver_pid, std::memory_order_release);
+}
+
+void StreamShmCreator::set_senders_pid(uint32_t senders_pid) {
+    if (!valid()) {
+        return;
+    }
+    static_cast<SMALLRingQueueHeader*>(shm_ptr_)->senders_pid.store(senders_pid, std::memory_order_release);
 }
 
 } // namespace MulProcess

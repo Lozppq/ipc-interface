@@ -190,6 +190,30 @@ public:
      */
     void set_flag(uint32_t flag);
 
+    /**
+     * @brief 获取接收者 pid
+     * @return 接收者 pid，无效时返回 0
+     */
+    uint32_t get_receiver_pid() const;
+
+    /**
+     * @brief 设置接收者 pid
+     * @param receiver_pid 接收者 pid
+     */
+    void set_receiver_pid(uint32_t receiver_pid);
+
+    /**
+     * @brief 设置发送者 pid
+     * @param senders_pid 发送者 pid
+     */
+    void set_senders_pid(uint32_t senders_pid);
+
+    /**
+     * @brief 获取发送者 pid
+     * @return 发送者 pid（0 表示多个发送者），无效时返回 0
+     */
+    uint32_t get_senders_pid() const;
+
 private:
     /**
      * @brief 创建共享内存结构体
@@ -205,12 +229,6 @@ private:
     int send_impl(Header* hdr, const std::vector<uint8_t>& msg);
     template<typename Header>
     uint32_t recv_impl(Header* hdr, std::vector<uint8_t>& buf);
-    template<typename Header>
-    bool is_empty_impl(Header* hdr) const;
-    template<typename Header>
-    bool is_full_impl(Header* hdr) const;
-    template<typename Header>
-    void set_flag_impl(Header* hdr, uint32_t flag);
 
 private:
     std::string shm_name_;
@@ -335,21 +353,6 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
     }
     hdr->head.store(head, std::memory_order_release);
     return t_msg_index;
-}
-
-template<typename Header>
-bool StreamShmCreator::is_empty_impl(Header* hdr) const {
-    return hdr->head.load(std::memory_order_acquire) == hdr->tail.load(std::memory_order_acquire);
-}
-
-template<typename Header>
-bool StreamShmCreator::is_full_impl(Header* hdr) const {
-    return (hdr->tail.load(std::memory_order_acquire) + 1) % slot_count_ == hdr->head.load(std::memory_order_acquire);
-}
-
-template<typename Header>
-void StreamShmCreator::set_flag_impl(Header* hdr, uint32_t flag) {
-    hdr->flag.store(flag, std::memory_order_release);
 }
 
 } // namespace MulProcess

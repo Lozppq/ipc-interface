@@ -15,7 +15,7 @@ SendWork::~SendWork() {
     shm_ = NULL;
 }
 
-void SendWork::send(std::vector<uint8_t> msg, StreamShmCreator* shm) {
+void SendWork::send(std::vector<uint8_t>& msg, StreamShmCreator* shm) {
     if (msg.empty()) {
         return;
     }
