@@ -29,7 +29,7 @@ LockFreeQueue<T>::~LockFreeQueue() {
 
 template<typename T>
 bool LockFreeQueue<T>::push(const T& item) {
-    size_t tail = tail_.load(std::memory_order_relaxed);
+    size_t tail = tail_.load(std::memory_order_acquire);
     size_t head;
     
     while (true) {
@@ -41,7 +41,7 @@ bool LockFreeQueue<T>::push(const T& item) {
         
         // CAS抢占队尾位置，成功则跳出循环
         if (tail_.compare_exchange_weak(tail, tail + 1,
-                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                std::memory_order_acq_rel, std::memory_order_release)) {
             break;
         }
     }
@@ -55,7 +55,7 @@ bool LockFreeQueue<T>::push(const T& item) {
 
 template<typename T>
 bool LockFreeQueue<T>::push(T&& item) {
-    size_t tail = tail_.load(std::memory_order_relaxed);
+    size_t tail = tail_.load(std::memory_order_acquire);
     size_t head;
     
     while (true) {
@@ -65,7 +65,7 @@ bool LockFreeQueue<T>::push(T&& item) {
         }
         
         if (tail_.compare_exchange_weak(tail, tail + 1,
-                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                std::memory_order_acq_rel, std::memory_order_acquire)) {
             break;
         }
     }
@@ -78,8 +78,8 @@ bool LockFreeQueue<T>::push(T&& item) {
 
 template<typename T>
 bool LockFreeQueue<T>::pop(T& item) {
-    size_t head = head_.load(std::memory_order_relaxed);
-    size_t tail;
+    size_t head = head_.load(std::memory_order_acquire);
+    size_t tail, idx;
     
     while (true) {
         tail = tail_.load(std::memory_order_acquire);
@@ -89,20 +89,18 @@ bool LockFreeQueue<T>::pop(T& item) {
         }
         
         // 检查数据是否已提交，未提交则自旋等待
-        size_t idx = head & mask_;
+        idx = head & mask_;
         if (!buffer_[idx].committed.load(std::memory_order_acquire)) {
             continue;
         }
-        
-        // 移动数据，重置提交标志，CAS更新队头
-        item = std::move(buffer_[idx].data);
-        buffer_[idx].committed.store(false, std::memory_order_relaxed);
-        
         if (head_.compare_exchange_weak(head, head + 1,
-                std::memory_order_acq_rel, std::memory_order_relaxed)) {
-            return true;
+            std::memory_order_acq_rel, std::memory_order_acquire)) {
+            break;
         }
     }
+    item = std::move(buffer_[idx].data);
+    buffer_[idx].committed.store(false, std::memory_order_release);
+    return true;
 }
 
 template<typename T>

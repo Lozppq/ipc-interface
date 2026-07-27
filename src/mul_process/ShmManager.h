@@ -24,6 +24,12 @@
 namespace IpcInterface {
 namespace MulProcess {
 
+// 存储名称和pid，这个是初始化进程id与消息接口名称的映射，用于初始化各个共享内存和客户端状态信息
+typedef struct {
+    std::string name;
+    uint32_t pid;
+} PidNameInfo;
+
 class ShmManager : public Model::MessageThread {
 public:
     /**
@@ -54,13 +60,15 @@ public:
 
     /**
      * @brief 初始化各个共享内存
+     * @param create 是否创建共享内存
     */
-    void initShm();
+    void initShm(bool create);
 
     /**
      * @brief 初始化各个客户端状态信息
+     * @param create 是否创建客户端状态信息
     */
-    void initClientStatusInfo();
+    void initClientStatusInfo(bool create);
 
     /**
      * @brief 初始化接收消息线程
@@ -68,21 +76,37 @@ public:
     void initReceiveWork();
 
     /**
+     * @brief 接收线程消息回调
+    */
+    void onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag);
+
+    /**
      * @brief 初始化发送消息线程
     */
     void initSendWork();
+
+    /**
+     * @brief 添加初始化进程id与消息接口名称映射
+     * @param info 进程id与消息接口名称映射
+     */
+    void addPidNameInfo(PidNameInfo info);
 
 protected:
     void OnThreadInit() override;
 
 private:
-    std::map<std::string, StreamShmCreator> shmInfosMap_;
-    std::map<std::string, ShmCreator<ClientStatusInfo>> clientStatusInfosMap_;
+    void openStreamShmRetry(PidNameInfo info, bool create);
+    void openClientStatusInfoRetry(PidNameInfo info);
+
+    std::map<std::string, std::unique_ptr<StreamShmCreator>> shmInfosMap_;
+    std::map<std::string, std::unique_ptr<ShmCreator<ClientStatusInfo>>> clientStatusInfosMap_;
     std::string shm_name_;  // 本进程的消息接口名称
     // 接收消息线程对象
-    ReceiveWork receive_work_;
+    ReceiveWork* receive_work_{NULL};
     // 发送消息线程对象
-    SendWork send_work_;
+    SendWork* send_work_{NULL};
+    // 初始化进程id与消息接口名称映射
+    std::vector<PidNameInfo> pidNameInfos_;
 };
 
 } // namespace MulProcess
