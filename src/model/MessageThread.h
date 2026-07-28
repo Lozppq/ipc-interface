@@ -49,9 +49,19 @@ public:
      * @brief 启动周期性定时器
      * @param interval_ms 周期毫秒数
      * @param callback 定时器回调函数
+     * @return 定时器id
      */
-    void startTimer(int interval_ms, std::function<void()> callback);
+    uint32_t startTimer(int interval_ms, std::function<void()> callback);
 
+    /**
+     * @brief 停止周期性定时器
+     * @param timer_id 定时器id
+     */
+    void stopTimer(uint32_t timer_id);
+
+    /**
+     * @brief 停止线程
+     */
     void stop() override;
 
 protected:
@@ -63,6 +73,7 @@ private:
      * @brief 定时器结构，存储超时时间、周期和回调
      */
     struct Timer {
+        uint32_t id;                                   // 定时器id
         std::chrono::steady_clock::time_point expiry; // 超时时间点
         std::chrono::milliseconds interval;            // 周期（一次性为0）
         std::function<void()> callback;                // 回调函数
@@ -78,6 +89,7 @@ private:
     LockFreeQueue<std::function<void()>> queue_;  // 无锁任务队列
     sem_t sem_;                                   // 唤醒信号量
     std::priority_queue<Timer, std::vector<Timer>, std::greater<Timer>> timer_heap_; // 定时器堆
+    std::atomic<uint32_t> timer_ids_;  // 定时器id，自增id，用于区分不同的定时器
 };
 
 } // namespace Model

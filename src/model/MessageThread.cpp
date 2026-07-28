@@ -17,6 +17,7 @@ namespace Model {
 MessageThread::MessageThread(size_t queue_size, std::string name)
     : ThreadBase(std::move(name)), queue_(queue_size) {
     sem_init(&sem_, 0, 0);
+    timer_ids_.store(0, std::memory_order_release);
 }
 
 MessageThread::~MessageThread() {
@@ -39,9 +40,11 @@ void MessageThread::post(std::function<void()> task) {
 }
 
 void MessageThread::postTimer(int delay_ms, std::function<void()> callback) {
+    auto timer_id = timer_ids_.fetch_add(1, std::memory_order_relaxed);
     auto delay = std::chrono::milliseconds(delay_ms);
     if (isInWorkerThread()) {
         timer_heap_.push({
+            timer_id,
             std::chrono::steady_clock::now() + delay,
             delay,
             std::move(callback),
@@ -50,6 +53,7 @@ void MessageThread::postTimer(int delay_ms, std::function<void()> callback) {
     } else {
         queue_.push([this, delay, cb = std::move(callback)]() {
             timer_heap_.push({
+                timer_id,
                 std::chrono::steady_clock::now() + delay,
                 delay,
                 std::move(cb),
@@ -60,10 +64,12 @@ void MessageThread::postTimer(int delay_ms, std::function<void()> callback) {
     sem_post(&sem_);
 }
 
-void MessageThread::startTimer(int interval_ms, std::function<void()> callback) {
+uint32_t MessageThread::startTimer(int interval_ms, std::function<void()> callback) {
+    auto timer_id = timer_ids_.fetch_add(1, std::memory_order_relaxed);
     auto interval = std::chrono::milliseconds(interval_ms);
     if (isInWorkerThread()) {
         timer_heap_.push({
+            timer_id,
             std::chrono::steady_clock::now() + interval,
             interval,
             std::move(callback),
@@ -72,6 +78,7 @@ void MessageThread::startTimer(int interval_ms, std::function<void()> callback) 
     } else {
         queue_.push([this, interval, cb = std::move(callback)]() {
             timer_heap_.push({
+                timer_id,
                 std::chrono::steady_clock::now() + interval,
                 interval,
                 std::move(cb),
@@ -80,6 +87,34 @@ void MessageThread::startTimer(int interval_ms, std::function<void()> callback) 
         });
     }
     sem_post(&sem_);
+}
+
+void MessageThread::stopTimer(uint32_t timer_id) {
+    if (isInWorkerThread()) {
+        std::priority_queue<Timer, std::vector<Timer>, std::greater<Timer>> keep;
+        while (!timer_heap_.empty()) {
+            auto t = timer_heap_.top();
+            timer_heap_.pop();
+            if (t.id != timer_id) {
+                keep.push(std::move(t));   // 其它保留
+            }
+            // id 匹配的直接丢弃 = 删掉
+        }
+        timer_heap_.swap(keep);
+    } else {
+        queue_.push([this, timer_id]() {
+            std::priority_queue<Timer, std::vector<Timer>, std::greater<Timer>> keep;
+            while (!timer_heap_.empty()) {
+                auto t = timer_heap_.top();
+                timer_heap_.pop();
+                if (t.id != timer_id) {
+                    keep.push(std::move(t));
+                }
+            }
+            timer_heap_.swap(keep);
+        });
+        sem_post(&sem_);
+    }
 }
 
 void MessageThread::Run() {
