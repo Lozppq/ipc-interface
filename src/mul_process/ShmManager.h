@@ -37,12 +37,19 @@ public:
      * @brief 构造函数
      * @param shm_name 共享内存名称，作为本进程的消息接口名称
      */
-    ShmManager(const std::string& shm_name, const std::string& client_name);
+    ShmManager();
     
     /**
      * @brief 析构函数，自动调用 close()
      */
     ~ShmManager();
+
+    /**
+     * @brief 初始化参数
+     * @param shm_name 共享内存名称
+     * @param client_name 客户端名称
+     */
+    void initParams(const std::string& shm_name, const std::string& client_name);
 
     /**
      * @brief 单例类

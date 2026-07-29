@@ -2,11 +2,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
+#if defined(__linux__)
 #include <unistd.h>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <chrono>
+#endif
 
 namespace IpcInterface {
 namespace MulProcess {
@@ -28,6 +30,7 @@ StreamShmCreator::~StreamShmCreator() {
 }
 
 bool StreamShmCreator::create_shm(bool create) {
+#if defined(__linux__)
     if (!create) {
         struct stat st;
         if (fstat(shm_fd_, &st) != 0 || st.st_size == 0) {
@@ -63,9 +66,14 @@ bool StreamShmCreator::create_shm(bool create) {
         slot_count_ = header->slot_count.load(std::memory_order_acquire);
     }
     return true;
+#else
+    (void)create;
+    return false;
+#endif
 }
 
 bool StreamShmCreator::open(bool create) {
+#if defined(__linux__)
     is_owner_ = create;
     if (create) {
         shm_fd_ = shm_open(shm_name_.c_str(), O_CREAT | O_RDWR | O_EXCL, 0666);
@@ -88,16 +96,23 @@ bool StreamShmCreator::open(bool create) {
         }
     }
     return false;
+#else
+    (void)create;
+    return false;
+#endif
 }
 
 void StreamShmCreator::delete_shm() {
+#if defined(__linux__)
     if (is_owner_) {
         close();
         shm_unlink(shm_name_.c_str());
     }
+#endif
 }
 
 void StreamShmCreator::close() {
+#if defined(__linux__)
     if (shm_ptr_ && shm_ptr_ != MAP_FAILED) {
         munmap(shm_ptr_, total_size_);
         shm_ptr_ = NULL;
@@ -106,10 +121,18 @@ void StreamShmCreator::close() {
         ::close(shm_fd_);
         shm_fd_ = -1;
     }
+#else
+    shm_ptr_ = NULL;
+    shm_fd_ = -1;
+#endif
 }
 
 bool StreamShmCreator::valid() const {
+#if defined(__linux__)
     return shm_ptr_ && shm_ptr_ != MAP_FAILED;
+#else
+    return shm_ptr_ != NULL;
+#endif
 }
 
 int StreamShmCreator::send(const std::vector<uint8_t>& msg) {

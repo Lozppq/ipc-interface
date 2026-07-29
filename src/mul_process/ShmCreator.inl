@@ -21,6 +21,7 @@ T* ShmCreator<T>::get_shm_ptr() const {
 
 template<typename T>
 bool ShmCreator<T>::create_shm(bool create) {
+#if defined(__linux__)
     if (!create) {
         struct stat st;
         if (fstat(shm_fd_, &st) != 0 || st.st_size == 0) {
@@ -43,10 +44,15 @@ bool ShmCreator<T>::create_shm(bool create) {
     }
     shm_ptr_ = static_cast<T*>(ptr);
     return true;
+#else
+    (void)create;
+    return false;
+#endif
 }
 
 template<typename T>
 bool ShmCreator<T>::open(bool create) {
+#if defined(__linux__)
     is_owner_ = create;
     if (create) {
         shm_fd_ = shm_open(shm_name_.c_str(), O_CREAT | O_RDWR | O_EXCL, 0666);
@@ -69,18 +75,25 @@ bool ShmCreator<T>::open(bool create) {
         }
     }
     return false;
+#else
+    (void)create;
+    return false;
+#endif
 }
 
 template<typename T>
 void ShmCreator<T>::delete_shm() {
+#if defined(__linux__)
     if (is_owner_) {
         close();
         shm_unlink(shm_name_.c_str());
     }
+#endif
 }
 
 template<typename T>
 void ShmCreator<T>::close() {
+#if defined(__linux__)
     if (shm_ptr_) {
         munmap(static_cast<void*>(shm_ptr_), total_size_);
         shm_ptr_ = NULL;
@@ -89,6 +102,10 @@ void ShmCreator<T>::close() {
         ::close(shm_fd_);
         shm_fd_ = -1;
     }
+#else
+    shm_ptr_ = NULL;
+    shm_fd_ = -1;
+#endif
 }
 
 template<typename T>

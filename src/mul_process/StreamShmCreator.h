@@ -3,10 +3,12 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <semaphore.h>
 #include <vector>
 #include <string>
 #include "../define/common.h"
+#if defined(__linux__)
+#include <semaphore.h>
+#endif
 
 namespace IpcInterface {
 namespace MulProcess {
@@ -43,7 +45,9 @@ typedef struct {
  * @brief 小数据环形队列结构体
 **/
 typedef struct {
+#if defined(__linux__)
     sem_t sem;           // 信号量，用于消费者阻塞等待
+#endif
     std::atomic<uint32_t> head;  // 队头指针
     std::atomic<uint32_t> tail;  // 队尾指针
     std::atomic<uint32_t> slot_size; // 数据区大小
@@ -60,7 +64,9 @@ typedef struct {
  * @brief 中数据环形队列结构体
 **/
 typedef struct {
+#if defined(__linux__)
     sem_t sem;           // 信号量，用于消费者阻塞等待
+#endif
     std::atomic<uint32_t> head;  // 队头指针
     std::atomic<uint32_t> tail;  // 队尾指针
     std::atomic<uint32_t> slot_size; // 数据区大小
@@ -77,7 +83,9 @@ typedef struct {
  * @brief 大数据环形队列结构体
 **/
 typedef struct {
+#if defined(__linux__)
     sem_t sem;           // 信号量，用于消费者阻塞等待
+#endif
     std::atomic<uint32_t> head;  // 队头指针
     std::atomic<uint32_t> tail;  // 队尾指针
     std::atomic<uint32_t> slot_size; // 数据区大小
@@ -298,8 +306,9 @@ int StreamShmCreator::send_impl(Header* hdr, const std::vector<uint8_t>& msg) {
         t_msg_index += t_len;
     }
 
-    // 提交信号量
+#if defined(__linux__)
     sem_post(&hdr->sem);
+#endif
 
     return msg.size();
 }
@@ -310,8 +319,9 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
         return 0;
     }
 
-    // 等待信号量
+#if defined(__linux__)
     sem_wait(&hdr->sem);
+#endif
 
     // 不允许接收，退出逻辑需要清理
     if ((hdr->flag.load(std::memory_order_acquire) & Define::BIT1) == 0) {

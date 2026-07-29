@@ -9,23 +9,17 @@
 #include "ShmManager.h"
 #include "../define/common.h"
 #include "StreamShmCreator.h"
+#if defined(__linux__)
+#include <unistd.h>
+#endif
 
 namespace IpcInterface {
 namespace MulProcess {
 
-ShmManager::ShmManager(const std::string& shm_name, const std::string& client_name) 
+ShmManager::ShmManager() 
     : MessageThread(),
-    shm_name_(shm_name),
-    client_name_(client_name) {
-    uint32_t pid = static_cast<uint32_t>(getpid());
-    if (shm_name_ == Define::Daemon) {
-        addPidNameInfo({shm_name, client_name, pid});
-    } else { 
-        // 不是守护进程，初始化添加所有进程，先默认使用当前进程pid，实则除了守护进程会使用这个pid，其他的进程一般不会使用，共享内存里面有一份就足够了
-        for (int i = 0; i < Define::kShmNameCount; i++) {
-            addPidNameInfo({Define::kShmNames[i], Define::kStatShmNames[i], pid});
-        }
-    }
+    shm_name_(""),
+    client_name_("") {
 }
 
 ShmManager::~ShmManager() {
@@ -36,6 +30,24 @@ ShmManager::~ShmManager() {
     if (send_work_) {
         send_work_->stop();
         delete send_work_;
+    }
+}
+
+void ShmManager::initParams(const std::string& shm_name, const std::string& client_name) {
+    shm_name_ = shm_name;
+    client_name_ = client_name;
+#if defined(__linux__)
+    uint32_t pid = static_cast<uint32_t>(getpid());
+#else
+    uint32_t pid = 0;
+#endif
+    if (shm_name_ == Define::Daemon) {
+        addPidNameInfo({shm_name, client_name, pid});
+    } else { 
+        // 不是守护进程，初始化添加所有进程，先默认使用当前进程pid，实则除了守护进程会使用这个pid，其他的进程一般不会使用，共享内存里面有一份就足够了
+        for (int i = 0; i < Define::kShmNameCount; i++) {
+            addPidNameInfo({Define::kShmNames[i], Define::kStatShmNames[i], pid});
+        }
     }
 }
 
@@ -72,7 +84,9 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
             shm.set_senders_pid(0);
         } else {
             // 这里需要更新 pidNameInfos_ 中的 pid
-            auto it_info = pidNameInfos_.find(info.shm_name);
+            auto it_info = std::find_if(pidNameInfos_.begin(), pidNameInfos_.end(), [info](const PidNameInfo& item) {
+                return item.shm_name == info.shm_name;
+            });
             if (it_info != pidNameInfos_.end()) {
                 it_info->pid = shm.get_receiver_pid();
             }
@@ -135,7 +149,7 @@ void ShmManager::setShmClientStatusInfo(PidNameInfo info) {
 }
 
 void ShmManager::initReceiveWork() {
-    receive_work_ = new ReceiveWork(shmInfosMap_.at(shm_name_), [this](std::shared_ptr<TagReceiveMessage> tag) {
+    receive_work_ = new ReceiveWork(shmInfosMap_.at(shm_name_).get(), [this](std::shared_ptr<TagReceiveMessage> tag) {
         onReceiveMessage(tag);
     });
     receive_work_->start();

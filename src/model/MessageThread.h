@@ -12,9 +12,11 @@
 #include "LockFreeQueue.h"
 #include <functional>
 #include <chrono>
-#include <queue>
-#include <semaphore.h>
+#include <set>
 #include <thread>
+#if defined(__linux__)
+#include <semaphore.h>
+#endif
 
 namespace IpcInterface {
 namespace Model {
@@ -42,8 +44,9 @@ public:
      * @brief 投递一次性定时器任务
      * @param delay_ms 延迟毫秒数
      * @param callback 定时器回调函数
+     * @return 定时器id
      */
-    void postTimer(int delay_ms, std::function<void()> callback);
+    uint32_t postTimer(int delay_ms, std::function<void()> callback);
     
     /**
      * @brief 启动周期性定时器
@@ -80,15 +83,18 @@ private:
         bool periodic;                                 // 是否周期性
         
         // 优先队列比较函数，expiry 小的优先级高
-        bool operator>(const Timer& other) const {
-            return expiry > other.expiry;
+        bool operator<(const Timer& other) const {
+            if (expiry != other.expiry) return expiry < other.expiry;
+            return id < other.id;
         }
     };
 private:
     
     LockFreeQueue<std::function<void()>> queue_;  // 无锁任务队列
+#if defined(__linux__)
     sem_t sem_;                                   // 唤醒信号量
-    std::priority_queue<Timer, std::vector<Timer>, std::greater<Timer>> timer_heap_; // 定时器堆
+#endif
+    std::set<Timer> timers_; // 定时器堆
     std::atomic<uint32_t> timer_ids_;  // 定时器id，自增id，用于区分不同的定时器
 };
 

@@ -6,11 +6,17 @@
 
 #include <cstdint>
 #include <string>
+#include <cstdio>
+#if defined(__linux__)
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <cstdio>
+#else
+#ifndef MAP_FAILED
+#define MAP_FAILED ((void*)-1)
+#endif
+#endif
 
 namespace IpcInterface {
 namespace MulProcess {
