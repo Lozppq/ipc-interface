@@ -192,27 +192,25 @@ void MessageThread::Run() {
 
         // 处理队列中的所有任务（包括定时器注册任务）
         std::function<void()> task;
-        while (queue_.pop(task)) {
-            task();
-        }
-
         // 处理已过期的定时器
         now = std::chrono::steady_clock::now();
-        std::vector<Timer> expired_timers;
-        while (!timers_.empty() && timers_.begin()->expiry <= now) {
-            Timer timer = *timers_.begin();
-            timers_.erase(timers_.begin());
-            // 这里直接执行回调
-            timer.callback();
-            // 周期定时器重新计算下次超时时间
-            if (timer.periodic) {
-                timer.expiry = now + timer.interval;
-                expired_timers.push_back(std::move(timer));
+        while (!queue_.isEmpty() || (!timers_.empty() && timers_.begin()->expiry <= now)) {
+            if (queue_.pop(task)) {
+                task();
             }
+
             now = std::chrono::steady_clock::now();
-        }
-        for (auto& timer : expired_timers) {
-            timers_.insert(std::move(timer));
+            if (!timers_.empty() && timers_.begin()->expiry <= now) {
+                Timer timer = *timers_.begin();
+                timers_.erase(timers_.begin());
+                // 这里直接执行回调
+                timer.callback();
+                // 周期定时器重新计算下次超时时间
+                if (timer.periodic) {
+                    timer.expiry = now + timer.interval; // 重新计算下次超时时间，用当前进来now计算下次相对时间，而不是上一次时间，避免“雪崩”现象
+                    timers_.insert(std::move(timer));
+                }
+            }
         }
     }
 }
