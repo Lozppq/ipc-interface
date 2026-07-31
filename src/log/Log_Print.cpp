@@ -46,14 +46,21 @@ void LogPrint::printLog(int level, const char* fmt, ...) {
     }
 
     char time_buf[32];
-    time_t now = time(nullptr);
     struct tm tm_now {};
+    int ms = 0;
 #if defined(__linux__)
-    localtime_r(&now, &tm_now);
+    struct timespec ts {};
+    clock_gettime(CLOCK_REALTIME, &ts);
+    localtime_r(&ts.tv_sec, &tm_now);
+    ms = static_cast<int>(ts.tv_nsec / 1000000);
 #else
+    time_t now = time(nullptr);
     if (struct tm* p = localtime(&now)) tm_now = *p;
 #endif
-    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_now);
+    size_t len = strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_now);
+    if (len > 0 && len + 4 < sizeof(time_buf)) {
+        snprintf(time_buf + len, sizeof(time_buf) - len, ".%03d", ms);
+    }
 
 #if defined(__linux__)
     long tid = syscall(SYS_gettid);

@@ -11,6 +11,7 @@ enum{
     Level_Warning = 0x02,
     Level_Error = 0x04,
     Level_Debug = 0x08,
+    Level_All = 0x0F,
 };
 
 // 打印日志级别控制的一个变量，控制哪些级别的日志可以打印，直接定义一个无符号整数
