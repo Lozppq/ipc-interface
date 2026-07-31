@@ -52,9 +52,9 @@ void ShmManager::initParams(const std::string& shm_name, const std::string& clie
 }
 
 
-ShmManager& ShmManager::getInstance() {
+ShmManager* ShmManager::getInstance() {
     static ShmManager instance;
-    return instance;
+    return &instance;
 }
 
 void ShmManager::addPidNameInfo(PidNameInfo info){
@@ -105,7 +105,7 @@ void ShmManager::initClientStatusInfo(bool create) {
     for (auto& info : pidNameInfos_) {
         clientStatusInfosMap_.emplace(
             info.shm_name,
-            std::make_unique<ShmCreator<ClientStatusInfo>>(info.client_name, sizeof(ClientStatusInfo)));
+            std::make_unique<Model::ShmCreator<ClientStatusInfo>>(info.client_name, sizeof(ClientStatusInfo)));
         openClientStatusInfoRetry(info, create);
     }
 }

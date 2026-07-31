@@ -18,6 +18,11 @@ ProcessManager::~ProcessManager() {
 
 }
 
+ProcessManager* ProcessManager::getInstance() {
+    static ProcessManager instance;
+    return &instance;
+}
+
 void ProcessManager::OnThreadInit() {
 
 }

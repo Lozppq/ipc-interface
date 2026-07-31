@@ -1,3 +1,8 @@
+/**
+ * @file ShmCreator.inl
+ * @brief 共享内存创建器实现
+*/
+
 
 template<typename T>
 ShmCreator<T>::ShmCreator(const std::string& name, uint32_t total_size) 

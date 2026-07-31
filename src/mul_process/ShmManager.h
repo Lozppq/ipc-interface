@@ -9,7 +9,7 @@
 #pragma once
 #include "../model/MessageThread.h"
 #include "StreamShmCreator.h"
-#include "ShmCreator.h"
+#include "../model/ShmCreator.h"
 #include "ReceiveWork.h"
 #include "SendWork.h"
 #include <atomic>
@@ -53,9 +53,9 @@ public:
 
     /**
      * @brief 单例类
-     * @return 单例类实例
+     * @return 单例类指针
      */
-    static ShmManager& getInstance();
+    static ShmManager* getInstance();
 
     ShmManager(const ShmManager&) = delete;
     ShmManager& operator=(const ShmManager&) = delete;
@@ -113,7 +113,7 @@ private:
     void setShmClientStatusInfo(PidNameInfo info);
 
     std::map<std::string, std::unique_ptr<StreamShmCreator>> shmInfosMap_;
-    std::map<std::string, std::unique_ptr<ShmCreator<ClientStatusInfo>>> clientStatusInfosMap_;
+    std::map<std::string, std::unique_ptr<Model::ShmCreator<ClientStatusInfo>>> clientStatusInfosMap_;
     std::string shm_name_;  // 本进程的消息接口名称
     std::string client_name_;  // 本进程的客户端名称
     // 接收消息线程对象

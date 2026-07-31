@@ -71,5 +71,12 @@ constexpr const char* StatDaemon = kStatShmNames[0];
 constexpr const char* StatUI = kStatShmNames[1];
 constexpr const char* StatWorker = kStatShmNames[2];
 
+// 下面的使用枚举值来代替各个进程的名称
+enum{
+    Daemon_Fd = 0,
+    UI_Fd = 1,
+    Worker_Fd = 2,
+};
+
 } // namespace Define
 } // namespace IpcInterface

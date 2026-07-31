@@ -1,5 +1,6 @@
 /**
  * @file ShmCreator.h
+ * @brief 共享内存创建器
 */
 
 #pragma once
@@ -19,7 +20,7 @@
 #endif
 
 namespace IpcInterface {
-namespace MulProcess {
+namespace Model {
 
 template<typename T>
 class ShmCreator {
@@ -81,5 +82,5 @@ protected:
 
 #include "ShmCreator.inl"
 
-} // namespace MulProcess
+} // namespace Model
 } // namespace IpcInterface
