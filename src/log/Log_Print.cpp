@@ -69,27 +69,22 @@ void LogPrint::printLog(int level, const char* fmt, ...) {
 #endif
 
     char buf[1024];
-    int off = snprintf(buf, sizeof(buf), "%s %s [%ld]  ", time_buf, level_tag, tid);
-    if (off < 0) 
-        off = 0;
-    else if (off >= static_cast<int>(sizeof(buf))) 
-        off = static_cast<int>(sizeof(buf)) - 1;
-
+    // 内容区：预留最后 2 字节给 '\n' 和 '\0'
+    constexpr int kBodyCap = static_cast<int>(sizeof(buf)) - 2;  // 最多写到这里
+    int off = snprintf(buf, kBodyCap + 1, "%s %s [%ld]  ", time_buf, level_tag, tid);
+    if (off < 0) off = 0;
+    else if (off > kBodyCap) off = kBodyCap;
     va_list args;
     va_start(args, fmt);
-    int n = vsnprintf(buf + off, sizeof(buf) - off, fmt, args);
+    int n = vsnprintf(buf + off, static_cast<size_t>(kBodyCap - off + 1), fmt, args);
     va_end(args);
-
     if (n > 0) {
         off += n;
-        if (off >= static_cast<int>(sizeof(buf))) 
-            off = static_cast<int>(sizeof(buf)) - 1;
+        if (off > kBodyCap) off = kBodyCap;
     }
-
-    if (off + 1 < static_cast<int>(sizeof(buf))) {
-        buf[off++] = '\n';
-        buf[off] = '\0';
-    }
+    // 无论前面是否截断，这里一定能放下
+    buf[off++] = '\n';
+    buf[off] = '\0';
 
     // 如果日志级别匹配，则打印到控制台
     if (g_log_level & level){

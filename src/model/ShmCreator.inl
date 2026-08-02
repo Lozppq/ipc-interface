@@ -30,20 +30,20 @@ bool ShmCreator<T>::create_shm(bool create) {
     if (!create) {
         struct stat st;
         if (fstat(shm_fd_, &st) != 0 || st.st_size == 0) {
-            printf("ShmCreator: fstat failed, st.st_size = %ld\n", st.st_size);
+            LOG_ERROR("ShmCreator: fstat failed, st.st_size = %ld", st.st_size);
             return false;
         }
         total_size_ = static_cast<uint32_t>(st.st_size);
     } else {
         if (ftruncate(shm_fd_, total_size_) != 0) {
-            printf("ShmCreator: ftruncate failed, total_size_ = %d\n", total_size_);
+            LOG_ERROR("ShmCreator: ftruncate failed, total_size_ = %d", total_size_);
             return false;
         }
     }
 
     void* ptr = mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
     if (ptr == MAP_FAILED) {
-        printf("ShmCreator: mmap failed\n");
+        LOG_ERROR("ShmCreator: mmap failed");
         shm_ptr_ = NULL;
         return false;
     }
@@ -68,7 +68,7 @@ bool ShmCreator<T>::open(bool create) {
             if (shm_fd_ >= 0) {
                 return create_shm(false);
             } else {
-                printf("ShmCreator: open failed, shm_fd_ = %d\n", shm_fd_);
+                LOG_ERROR("ShmCreator: open failed, shm_fd_ = %d", shm_fd_);
             }
         }
     } else {
@@ -76,7 +76,7 @@ bool ShmCreator<T>::open(bool create) {
         if (shm_fd_ >= 0) {
             return create_shm(false);
         } else {
-            printf("ShmCreator: open failed, shm_fd_ = %d\n", shm_fd_);
+            LOG_ERROR("ShmCreator: open failed, shm_fd_ = %d", shm_fd_);
         }
     }
     return false;
@@ -111,6 +111,7 @@ void ShmCreator<T>::close() {
     shm_ptr_ = NULL;
     shm_fd_ = -1;
 #endif
+    LOG_DEBUG("ShmCreator: close success, shm_name_ = %s", shm_name_.c_str());
 }
 
 template<typename T>

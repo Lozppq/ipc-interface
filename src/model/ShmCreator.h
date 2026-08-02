@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <cstdio>
+#include "log/Log_Print.h"
 #if defined(__linux__)
 #include <sys/mman.h>
 #include <sys/stat.h>

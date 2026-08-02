@@ -107,7 +107,7 @@ typedef struct {
     std::atomic<uint32_t> send_head;  // 维护一个最后发送消息的头部索引
     std::atomic<uint32_t> send_to_pid;  // 维护一个本进程最后发送消息给其他进程的pid
     std::atomic<uint32_t> local_pid;  // 维护一个本进程的pid
-    std::atomic<bool> send_status;  // 维护一个最后发送消息的状态
+    std::atomic<bool> send_status;  // 维护一个最后发送消息的状态，代表是否成功发送，true成功，false失败
 }ClientStatusInfo;
 
 
@@ -147,6 +147,11 @@ public:
      * @brief 关闭共享内存，释放资源
      */
     void close();
+
+    /**
+     * @brief 删除共享内存
+     */
+    void delete_shm();
     
     /**
      * @brief 检查是否有效
@@ -222,16 +227,16 @@ public:
      */
     uint32_t get_senders_pid() const;
 
+    /**
+     * @brief 进程崩溃，这里重置恢复一下共享内存
+    */
+    void reset_shm();
+
 private:
     /**
      * @brief 创建共享内存结构体
      */
     bool create_shm(bool create);
-    
-    /**
-     * @brief 删除共享内存
-     */
-    void delete_shm();
 
     template<typename Header>
     int send_impl(Header* hdr, const std::vector<uint8_t>& msg);

@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
+#include "log/Log_Print.h"
 #if defined(__linux__)
 #include <unistd.h>
 #include <sys/mman.h>
@@ -34,7 +35,7 @@ bool StreamShmCreator::create_shm(bool create) {
     if (!create) {
         struct stat st;
         if (fstat(shm_fd_, &st) != 0 || st.st_size == 0) {
-            printf("StreamShmCreator: fstat failed, st.st_size = %ld\n", st.st_size);
+            LOG_ERROR("StreamShmCreator: fstat failed, st.st_size = %ld", st.st_size);
             return false;
         }
         total_size_ = static_cast<uint32_t>(st.st_size);
@@ -46,7 +47,7 @@ bool StreamShmCreator::create_shm(bool create) {
     void* ptr = mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
     if (ptr == MAP_FAILED) {
         shm_ptr_ = NULL;
-        printf("StreamShmCreator: mmap failed, total_size_ = %d\n", total_size_);
+        LOG_ERROR("StreamShmCreator: mmap failed, total_size_ = %d", total_size_);
         return false;
     }
     shm_ptr_ = ptr;
@@ -84,7 +85,7 @@ bool StreamShmCreator::open(bool create) {
             if (shm_fd_ >= 0) {
                 return create_shm(false);
             } else {
-                printf("StreamShmCreator: open failed, shm_fd_ = %d\n", shm_fd_);
+                LOG_ERROR("StreamShmCreator: open failed, shm_fd_ = %d", shm_fd_);
             }
         }
     } else {
@@ -92,7 +93,7 @@ bool StreamShmCreator::open(bool create) {
         if (shm_fd_ >= 0) {
             return create_shm(false);
         } else {
-            printf("StreamShmCreator: open failed, shm_fd_ = %d\n", shm_fd_);
+            LOG_ERROR("StreamShmCreator: open failed, shm_fd_ = %d", shm_fd_);
         }
     }
     return false;

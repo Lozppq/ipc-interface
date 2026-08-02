@@ -6,66 +6,28 @@
 #include <sys/wait.h>
 #endif
 
-typedef struct {
-    std::string process_name;
-    std::string process_client_name;
-    std::string process_executable_name;
-} ProcessInfo;
-
-#if defined(__linux__)
-// 启动进程，返回子进程 pid；失败返回 -1
-pid_t start_process(const std::string& process_executable_name) {
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("fork");
-        return -1;
-    }
-    if (pid == 0) {
-        execlp(process_executable_name.c_str(), process_executable_name.c_str(), (char*)NULL);
-        perror("execlp");
-        _exit(127);
-    }
-    return pid;
-}
-#endif
-
 int main(int argc, char* argv[]) {
 #if defined(__linux__)
-    IpcInterface::MulProcess::ShmManager::getInstance().initParams(IpcInterface::Define::Daemon, IpcInterface::Define::StatDaemon);
-    ProcessInfo process_info[] = {
-        {
-            IpcInterface::Define::UI,
-            IpcInterface::Define::StatUI,
-            "./ui",
-        },
-        {
-            IpcInterface::Define::Worker,
-            IpcInterface::Define::StatWorker,
-            "./worker",
-        }
-    };
-    for (int i = 0; i < sizeof(process_info) / sizeof(process_info[0]); i++) {
-        pid_t pid = start_process(process_info[i].process_executable_name);
-        if (pid < 0) {
-            perror("start_process");
-            return -1;
-        }
-        IpcInterface::MulProcess::ShmManager::getInstance().addPidNameInfo({process_info[i].process_name, process_info[i].process_client_name, pid});
-    }
-    IpcInterface::MulProcess::ShmManager::getInstance().start();
+    IpcInterface::MulProcess::ShmManager::getInstance()->initParams(IpcInterface::Define::Daemon, IpcInterface::Define::StatDaemon);
+    // 设置创建进程回调函数，在里面调用IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo函数
+    IpcInterface::MulProcess::ProcessManager::getInstance()->setCreateProcessCallback([](std::string shm_name, std::string client_name, uint32_t pid) {
+        IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo({shm_name, client_name, pid});
+    });
+    IpcInterface::MulProcess::ShmManager::getInstance()->start();
+    IpcInterface::MulProcess::ProcessManager::getInstance()->start();
 
     // 在这里使用waitpid监控有没有崩溃的子线程，如果有则做完相应处理后重新启动
     while (true) {
         pid_t pid = waitpid(-1, NULL, 0);
         if (pid > 0) {
-            std::string process_name;
-            
-            // 做完相应处理后重新启动
-            pid_t t_pid = 0;
-            while (t_pid <= 0) {
-                t_pid = start_process(process_info[pid].process_executable_name);
-            }
-            
+            LOG_ERROR("Daemon: process crashed, pid: %d", pid);
+            // 这里先post到ShmManager的handleProcessCrash函数
+            IpcInterface::MulProcess::ShmManager::getInstance()->post([pid]() {
+                IpcInterface::MulProcess::ShmManager::getInstance()->handleProcessCrash(pid);
+                IpcInterface::MulProcess::ProcessManager::getInstance()->post([pid](){
+                    IpcInterface::MulProcess::ProcessManager::getInstance()->handleProcessCrash(pid);
+                });
+            });
         }
     }
     return 0;

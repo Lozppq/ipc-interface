@@ -71,6 +71,19 @@ constexpr const char* StatDaemon = kStatShmNames[0];
 constexpr const char* StatUI = kStatShmNames[1];
 constexpr const char* StatWorker = kStatShmNames[2];
 
+// 各个进程之间的执行方式名称
+constexpr const char* kProcessExecutableNames[] = {
+    "./daemon",
+    "./ui",
+    "./worker",
+};
+
+constexpr uint32_t kProcessExecutableNameCount = sizeof(kProcessExecutableNames) / sizeof(kProcessExecutableNames[0]);
+
+constexpr const char* DaemonExecutableName = kProcessExecutableNames[0];
+constexpr const char* UIExecutableName = kProcessExecutableNames[1];
+constexpr const char* WorkerExecutableName = kProcessExecutableNames[2];
+
 // 下面的使用枚举值来代替各个进程的名称
 enum{
     Daemon_Fd = 0,

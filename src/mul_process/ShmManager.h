@@ -67,6 +67,33 @@ public:
     void send(std::vector<uint8_t>& msg, std::string shm_name);
 
     /**
+     * @brief 接收线程消息回调
+    */
+    void onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag);
+
+    /**
+     * @brief 添加初始化进程id与消息接口名称映射
+     * @param info 进程id与消息接口名称映射
+     */
+    void addPidNameInfo(PidNameInfo info);
+
+    /**
+     * @brief 外部线程投递一次创建一个pidinfor相对应的共享内存和客户端状态信息
+    */
+    void postCreatePidNameInfo(PidNameInfo info);
+
+    /**
+     * @brief 处理进程崩溃共享内存的重置
+     * @param pid 进程id
+    */
+    void handleProcessCrash(uint32_t pid);
+    
+
+protected:
+    void OnThreadInit() override;
+
+private:
+    /**
      * @brief 初始化各个共享内存
      * @param create 是否创建共享内存
     */
@@ -89,25 +116,10 @@ public:
     void initReceiveWork();
 
     /**
-     * @brief 接收线程消息回调
-    */
-    void onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag);
-
-    /**
      * @brief 初始化发送消息线程
     */
     void initSendWork();
 
-    /**
-     * @brief 添加初始化进程id与消息接口名称映射
-     * @param info 进程id与消息接口名称映射
-     */
-    void addPidNameInfo(PidNameInfo info);
-
-protected:
-    void OnThreadInit() override;
-
-private:
     void openStreamShmRetry(PidNameInfo info, bool create);
     void openClientStatusInfoRetry(PidNameInfo info, bool create);
     void setShmClientStatusInfo(PidNameInfo info);

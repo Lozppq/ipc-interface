@@ -58,7 +58,56 @@ ShmManager* ShmManager::getInstance() {
 }
 
 void ShmManager::addPidNameInfo(PidNameInfo info){
-    pidNameInfos_.push_back(info);
+    // 如果在当前线程直接添加，否则需要post等待下一次找到在添加进去
+    if (isInWorkerThread()) {
+        pidNameInfos_.push_back(info);
+    } else {
+        post([this, info]() {
+            pidNameInfos_.push_back(info);
+        });
+    }
+}
+
+void ShmManager::postCreatePidNameInfo(PidNameInfo info) {
+    post([this, info]() {
+        auto it = std::find_if(pidNameInfos_.begin(), pidNameInfos_.end(),
+            [&info](const PidNameInfo& item) {
+                return item.shm_name == info.shm_name;
+        });
+        if (it == pidNameInfos_.end()) {
+            pidNameInfos_.push_back(info);
+        } else if (it->pid == info.pid && it->client_name == info.client_name) { // 如果pid和client_name都相同，则直接返回
+            return;
+        }
+        // 这里代表需要更新pid和client_name或者需要添加新的pidNameInfo
+        auto it_shm = shmInfosMap_.find(info.shm_name);
+        if (it_shm == shmInfosMap_.end()) {
+            shmInfosMap_.emplace(info.shm_name, std::make_unique<StreamShmCreator>(info.shm_name));
+            openStreamShmRetry(info, true);
+        } else {
+            // 这里更新一下pid，并且允许接收和发送
+            it_shm->second->set_receiver_pid(info.pid);
+            it_shm->second->set_flag(Define::BIT0 | Define::BIT1);
+        }
+
+        auto it_client = clientStatusInfosMap_.find(info.client_name);
+        if (it_client == clientStatusInfosMap_.end()) {
+            clientStatusInfosMap_.emplace(
+                info.client_name,
+                std::make_unique<Model::ShmCreator<ClientStatusInfo>>(info.client_name, sizeof(ClientStatusInfo)));
+            openClientStatusInfoRetry(info, true);
+        } else {
+            // 这里更新一下pid
+            it_client->second->get_shm_ptr()->local_pid.store(info.pid, std::memory_order_release);
+        }
+        // 这里设置一下共享内存中的client信息，只有属于进程通信的shm才需要设置
+        for (int i = 0; i < Define::kShmNameCount; i++) {
+            if (info.shm_name == Define::kShmNames[i]) {
+                setShmClientStatusInfo(info);
+                break;
+            }
+        }
+    });
 }
 
 void ShmManager::OnThreadInit() {
@@ -78,6 +127,10 @@ void ShmManager::initShm(bool create) {
 
 void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
     auto& shm = *shmInfosMap_.at(info.shm_name);
+    // 如果共享内存已经打开，则直接返回
+    if (shm.valid()) {
+        return;
+    }
     if (shm.open(create)) {
         if (create) {
             shm.set_receiver_pid(info.pid);
@@ -91,9 +144,9 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
                 it_info->pid = shm.get_receiver_pid();
             }
         }
-        printf("ShmManager: initShm success, name = %s, pid = %d\n", info.shm_name.c_str(), info.pid);
+        LOG_INFO("ShmManager: initShm success, name = %s, pid = %d", info.shm_name.c_str(), info.pid);
     } else {
-        printf("ShmManager: initShm failed, name = %s, pid = %d\n", info.shm_name.c_str(), info.pid);
+        LOG_ERROR("ShmManager: initShm failed, name = %s, pid = %d", info.shm_name.c_str(), info.pid);
         shm.close();
         postTimer(100, [this, info, create]() {
             openStreamShmRetry(info, create);
@@ -104,22 +157,26 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
 void ShmManager::initClientStatusInfo(bool create) {
     for (auto& info : pidNameInfos_) {
         clientStatusInfosMap_.emplace(
-            info.shm_name,
+            info.client_name,
             std::make_unique<Model::ShmCreator<ClientStatusInfo>>(info.client_name, sizeof(ClientStatusInfo)));
         openClientStatusInfoRetry(info, create);
     }
 }
 
 void ShmManager::openClientStatusInfoRetry(PidNameInfo info, bool create) {
-    auto& shm = *clientStatusInfosMap_.at(info.shm_name);
+    auto& shm = *clientStatusInfosMap_.at(info.client_name);
+    // 如果共享内存已经打开，则直接返回
+    if (shm.valid()) {
+        return;
+    }
     if (shm.open(create)) {
         if (create) {
             auto* p = shm.get_shm_ptr();
             p->local_pid.store(info.pid, std::memory_order_release);
         }
-        printf("ShmManager: initClientStatusInfo success, name = %s, pid = %d\n", info.shm_name.c_str(), info.pid);
+        LOG_INFO("ShmManager: initClientStatusInfo success, name = %s, pid = %d", info.shm_name.c_str(), info.pid);
     } else {
-        printf("ShmManager: initClientStatusInfo failed, name = %s, pid = %d\n", info.shm_name.c_str(), info.pid);
+        LOG_ERROR("ShmManager: initClientStatusInfo failed, name = %s, pid = %d", info.shm_name.c_str(), info.pid);
         shm.close();
         postTimer(100, [this, info, create]() {
             openClientStatusInfoRetry(info, create);
@@ -135,7 +192,7 @@ void ShmManager::initShmClientStatusInfo() {
 
 void ShmManager::setShmClientStatusInfo(PidNameInfo info) {
     // 先找到当前进程的client信息，然后设置到共享内存中，找不到则需要继续post等待下一次找到在设置进去
-    auto it_local_client = clientStatusInfosMap_.find(shm_name_);
+    auto it_local_client = clientStatusInfosMap_.find(client_name_);
     auto it_shm = shmInfosMap_.find(info.shm_name);
     // 如果没找到，或者找到了，但是该client守护进程还未创建完成导致共享内存是无效的，则需要继续post等待下一次找到在设置进去
     if (it_local_client == clientStatusInfosMap_.end() || !it_local_client->second || !it_local_client->second->valid() 
@@ -170,6 +227,46 @@ void ShmManager::send(std::vector<uint8_t>& msg, std::string shm_name) {
         return;
     }
     send_work_->send(msg, it->second.get());
+}
+
+void ShmManager::handleProcessCrash(uint32_t pid) {
+    // 先找到pidNameInfos_中pid对应的PidNameInfo，如果是进程通信的shm只需要重置，其他的临时通道需要直接删除
+    for (int i = 0; i < pidNameInfos_.size(); ) {
+        if (pidNameInfos_[i].pid == pid) {
+            bool is_process_shm = false;
+            for (int i = 0; i < Define::kShmNameCount; i++) {
+                if (pidNameInfos_[i].shm_name == Define::kShmNames[i]) {
+                    is_process_shm = true;
+                    break;
+                }
+            }
+            auto it_shm = shmInfosMap_.find(pidNameInfos_[i].shm_name);
+            if (it_shm != shmInfosMap_.end() && it_shm->second) {
+                if (is_process_shm) {
+                    // 先设置无法发送和接收
+                    it_shm->second->set_flag(0);
+                    // 获取对应pid的client信息
+                    auto it_client = clientStatusInfosMap_.find(pidNameInfos_[i].client_name);
+                    if (it_client != clientStatusInfosMap_.end() && it_client->second) {
+                        
+                    }
+
+                    i++;
+                } else {
+                    // 删除临时共享内存
+                    if (it_shm->second->valid()) {
+                        it_shm->second->delete_shm();
+                    }
+                    shmInfosMap_.erase(it_shm);
+                    pidNameInfos_.erase(pidNameInfos_.begin() + i);
+                }
+            } else {
+                i++;
+            }
+        } else {
+            i++;
+        }
+    }
 }
 
 } // namespace MulProcess
