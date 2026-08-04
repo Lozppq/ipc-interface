@@ -37,6 +37,12 @@ public:
      */
     void setCreateProcessCallback(CreateProcessCallback callback);
 
+    /**
+     * @brief 获取是否允许创建进程
+     * @return 是否允许创建进程
+     */
+    bool isAllowCreateProcess(std::string shm_name);
+
 
 protected:
 

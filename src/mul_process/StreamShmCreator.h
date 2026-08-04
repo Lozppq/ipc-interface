@@ -380,7 +380,7 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
             }
             head = (head + 1) % slot_count_;
         } else {
-            // 这里需要计算，如果等待当前槽位到固定tail超时，则直接将当前槽位数据丢弃再break
+            // 启发式探索：这里需要计算，如果等待当前槽位到固定tail超时，则直接将当前槽位数据丢弃再break
             uint32_t tail = hdr->tail.load(std::memory_order_acquire);
             uint32_t not_commit_head = head, not_commit_tail;
             if ((tail - head + slot_count_) % slot_count_ > MAX_SLICE_COUNT){

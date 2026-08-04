@@ -6,6 +6,7 @@
 
 #include "ProcessManager.h"
 #include "../log/Log_Print.h"
+#include <atomic>
 
 namespace IpcInterface {
 namespace MulProcess {
@@ -40,19 +41,40 @@ void ProcessManager::initCreateProcess() {
 }
 
 void ProcessManager::createProcess(std::string shm_name, std::string process_executable_name){
-    uint32_t pid = startProcess(process_executable_name);
-    if (pid > 0) {
-        process_infos_.push_back({shm_name, process_executable_name, pid});
-        if (create_process_callback_) {
-            create_process_callback_(shm_name, pid);
+    if (isAllowCreateProcess(shm_name)) {
+        uint32_t pid = startProcess(process_executable_name);
+        if (pid > 0) {
+            process_infos_.push_back({shm_name, process_executable_name, pid});
+            if (create_process_callback_) {
+                create_process_callback_(shm_name, pid);
+            }
+            LOG_INFO("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
+        } else {
+            LOG_ERROR("ProcessManager: failed, shm_name: %s, process_executable_name: %s, pid: %d", shm_name.c_str(), process_executable_name.c_str(), pid);
+            postTimer(100, [this, shm_name, process_executable_name]() {
+                createProcess(shm_name, process_executable_name);
+            });
         }
-        LOG_INFO("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
     } else {
-        LOG_ERROR("ProcessManager: failed, shm_name: %s, process_executable_name: %s, pid: %d", shm_name.c_str(), process_executable_name.c_str(), pid);
+        LOG_DEBUG("ProcessManager: not allow create process, shm_name: %s", shm_name.c_str());
         postTimer(100, [this, shm_name, process_executable_name]() {
             createProcess(shm_name, process_executable_name);
         });
     }
+}
+
+bool ProcessManager::isAllowCreateProcess(std::string shm_name) {
+    if (!process_sync_shm_creator_ || !process_sync_shm_creator_->get_shm_ptr()) {
+        return false;
+    }
+    if (shm_name == Define::Daemon) {
+        return process_sync_shm_creator_->get_shm_ptr()->daemon_sync_flag.load(std::memory_order_acquire) == Define::PROCESS_SYNC_FLAG_DONE;
+    } else if (shm_name == Define::UI) {
+        return process_sync_shm_creator_->get_shm_ptr()->ui_sync_flag.load(std::memory_order_acquire) == Define::PROCESS_SYNC_FLAG_DONE;
+    } else if (shm_name == Define::Worker) {
+        return process_sync_shm_creator_->get_shm_ptr()->worker_sync_flag.load(std::memory_order_acquire) == Define::PROCESS_SYNC_FLAG_DONE;
+    }
+    return false;
 }
 
 uint32_t ProcessManager::startProcess(const std::string& process_executable_name) {
