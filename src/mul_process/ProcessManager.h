@@ -43,6 +43,12 @@ public:
      */
     bool isAllowCreateProcess(std::string shm_name);
 
+    /**
+     * @brief 判断是否是需要主动拉起的进程
+     * @param pid 进程id
+     * @return 是否是需要主动拉起的进程
+     */
+    bool isNeedActivePullProcess(uint32_t pid);
 
 protected:
 

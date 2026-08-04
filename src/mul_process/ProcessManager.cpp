@@ -77,6 +77,16 @@ bool ProcessManager::isAllowCreateProcess(std::string shm_name) {
     return false;
 }
 
+bool ProcessManager::isNeedActivePullProcess(uint32_t pid) {
+    auto it = std::find_if(process_infos_.begin(), process_infos_.end(), [pid](const ProcessInfo& process_info) {
+        return process_info.pid == pid;
+    });
+    if (it != process_infos_.end()) {
+        return true;
+    }
+    return false;
+}
+
 uint32_t ProcessManager::startProcess(const std::string& process_executable_name) {
 #if defined(__linux__)
     pid_t pid = fork();

@@ -21,13 +21,16 @@ int main(int argc, char* argv[]) {
         pid_t pid = waitpid(-1, NULL, 0);
         if (pid > 0) {
             LOG_ERROR("Daemon: process crashed, pid: %d", pid);
-            // 这里先post到ShmManager的handleProcessCrash函数
-            IpcInterface::MulProcess::ShmManager::getInstance()->post([pid]() {
-                IpcInterface::MulProcess::ShmManager::getInstance()->handleProcessCrash(pid);
-                IpcInterface::MulProcess::ProcessManager::getInstance()->post([pid](){
-                    IpcInterface::MulProcess::ProcessManager::getInstance()->handleProcessCrash(pid);
+            // 这里先确定是不是需要主动拉的进程
+            if (IpcInterface::MulProcess::ProcessManager::getInstance()->isNeedActivePullProcess(pid)) {
+                // 这里先post到ShmManager的handleProcessCrash函数
+                IpcInterface::MulProcess::ShmManager::getInstance()->post([pid]() {
+                    IpcInterface::MulProcess::ShmManager::getInstance()->handleProcessCrash(pid);
+                    IpcInterface::MulProcess::ProcessManager::getInstance()->post([pid](){
+                        IpcInterface::MulProcess::ProcessManager::getInstance()->handleProcessCrash(pid);
+                    });
                 });
-            });
+            }
         }
     }
     return 0;
