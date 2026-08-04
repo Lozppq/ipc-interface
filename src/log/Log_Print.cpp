@@ -71,7 +71,7 @@ void LogPrint::printLog(int level, const char* fmt, ...) {
     char buf[1024];
     // 内容区：预留最后 2 字节给 '\n' 和 '\0'
     constexpr int kBodyCap = static_cast<int>(sizeof(buf)) - 2;  // 最多写到这里
-    int off = snprintf(buf, kBodyCap + 1, "%s %s [%ld]  ", time_buf, level_tag, tid);
+    int off = snprintf(buf, kBodyCap + 1, "%s %s [ipc-interface] [%ld]  ", time_buf, level_tag, tid);
     if (off < 0) off = 0;
     else if (off > kBodyCap) off = kBodyCap;
     va_list args;

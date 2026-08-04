@@ -9,7 +9,6 @@
 #pragma once
 #include "../model/MessageThread.h"
 #include "StreamShmCreator.h"
-#include "../model/ShmCreator.h"
 #include "ReceiveWork.h"
 #include "SendWork.h"
 #include <atomic>
@@ -118,8 +117,6 @@ private:
 
     std::map<std::string, std::unique_ptr<StreamShmCreator>> shmInfosMap_;
 
-    // 真实pid映射到逻辑进程ID的映射
-    std::map<uint32_t, uint8_t> realPidToLogicProcessIdMap_;
     std::string shm_name_;  // 本进程的消息接口名称
     // 接收消息线程对象
     ReceiveWork* receive_work_{NULL};

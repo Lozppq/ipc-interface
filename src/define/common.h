@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 
 namespace IpcInterface {
 namespace Define {
@@ -77,6 +78,22 @@ enum{
     Worker_Fd,
     INVALID_FD // 无效的fd
 };
+
+// 用于控制各个进程之间的同步，解决某些进程需要依赖某个进程执行一些初始化才能正常运行的问题
+enum{
+    // 进程未同步标志
+    PROCESS_SYNC_FLAG_NONE = 0,
+    // 进程同步完成标志
+    PROCESS_SYNC_FLAG_DONE = 1,
+};
+typedef struct {
+    std::atomic<uint8_t> daemon_sync_flag;
+    std::atomic<uint8_t> ui_sync_flag;
+    std::atomic<uint8_t> worker_sync_flag;
+} ProcessSyncInfo;
+
+// 进程同步结构体共享内存名称
+constexpr const char* ProcessSyncShmName = "/ipc_process_sync";
 
 } // namespace Define
 } // namespace IpcInterface

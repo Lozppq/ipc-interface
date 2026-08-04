@@ -2,8 +2,9 @@
 
 #include "../model/MessageThread.h"
 #include "../define/Common.h"
+#include "../model/ShmCreator.h"
 #include <vector>
-
+#include <memory>
 namespace IpcInterface {
 namespace MulProcess {
 
@@ -18,7 +19,7 @@ class ProcessManager : public Model::MessageThread {
 public:
     // 定义一个创建进程以后得回调函数，两个参数分别是shm_name, pid
     using CreateProcessCallback = std::function<void(std::string shm_name, int pid)>;
-    ProcessManager(const std::string& process_name = Define::Daemon);
+    ProcessManager();
     ~ProcessManager();
 
     /**
@@ -64,6 +65,10 @@ protected:
     */
     void handleProcessCrash(uint32_t pid);
     
+    /**
+     * @brief 初始化进程同步信息共享内存
+    */
+    void initProcessSyncShm();
 
 protected:
     void OnThreadInit() override;
@@ -71,8 +76,9 @@ protected:
 
 private:
     CreateProcessCallback create_process_callback_;
-    std::string process_name_;
     std::vector<ProcessInfo> process_infos_;
+    // 进程同步信息共享内存
+    std::shared_ptr<Model::ShmCreator<Define::ProcessSyncInfo>> process_sync_shm_creator_;
 };
 
 

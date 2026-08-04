@@ -10,9 +10,8 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-ProcessManager::ProcessManager(const std::string& process_name) 
-    : MessageThread(),
-    process_name_(process_name) {
+ProcessManager::ProcessManager() 
+    : MessageThread(){
 
 }
 
@@ -26,6 +25,7 @@ ProcessManager* ProcessManager::getInstance() {
 }
 
 void ProcessManager::OnThreadInit() {
+    initProcessSyncShm();
     initCreateProcess();
 }
 
@@ -49,7 +49,7 @@ void ProcessManager::createProcess(std::string shm_name, std::string process_exe
         LOG_INFO("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
     } else {
         LOG_ERROR("ProcessManager: failed, shm_name: %s, process_executable_name: %s, pid: %d", shm_name.c_str(), process_executable_name.c_str(), pid);
-        postTimer(1000, [this, shm_name, process_executable_name]() {
+        postTimer(100, [this, shm_name, process_executable_name]() {
             createProcess(shm_name, process_executable_name);
         });
     }
@@ -89,6 +89,24 @@ void ProcessManager::handleProcessCrash(uint32_t pid) {
         LOG_ERROR("ProcessManager: process not found, pid: %d", pid);
     }
 
+}
+
+void ProcessManager::initProcessSyncShm() {
+    process_sync_shm_creator_ = std::make_shared<Model::ShmCreator<Define::ProcessSyncInfo>>(Define::ProcessSyncShmName, sizeof(Define::ProcessSyncInfo));
+    if (process_sync_shm_creator_ && process_sync_shm_creator_->get_shm_ptr() && process_sync_shm_creator_->open(true)) {
+        LOG_INFO("ProcessManager: init process sync shm success, shm_name: %s", Define::ProcessSyncShmName);
+        auto process_sync_info = process_sync_shm_creator_->get_shm_ptr();
+
+        // 这里没有特殊要求全部按照已同步处理
+        process_sync_info->daemon_sync_flag.store(Define::PROCESS_SYNC_FLAG_DONE);
+        process_sync_info->ui_sync_flag.store(Define::PROCESS_SYNC_FLAG_DONE);
+        process_sync_info->worker_sync_flag.store(Define::PROCESS_SYNC_FLAG_DONE);
+    } else {
+        LOG_ERROR("ProcessManager: init process sync shm failed, shm_name: %s", Define::ProcessSyncShmName);
+        postTimer(100, [this]() {
+            initProcessSyncShm();
+        });
+    }
 }
 
 } // namespace MulProcess
