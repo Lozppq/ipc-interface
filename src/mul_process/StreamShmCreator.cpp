@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
-#include "log/Log_Print.h"
+#include "../log/Log_Print.h"
 #if defined(__linux__)
 #include <unistd.h>
 #include <sys/mman.h>
@@ -19,11 +19,24 @@ StreamShmCreator::StreamShmCreator(const std::string& name, uint32_t slot_size, 
     slot_size_(slot_size), 
     slot_count_(slot_count), 
     total_size_(0), 
-    client_info_(NULL),
     shm_fd_(-1),
     shm_ptr_(NULL),
     is_owner_(false) {
-    
+    logic_process_id_ = getLogicProcessId(name);
+    switch (slot_size_) {
+        case SIZE_64B:
+            slot_timeout_ = TIMEOUT_64B;
+            break;
+        case SIZE_1KB:
+            slot_timeout_ = TIMEOUT_1KB;
+            break;
+        case SIZE_256KB:
+            slot_timeout_ = TIMEOUT_256KB;
+            break;
+        default:
+            slot_timeout_ = TIMEOUT_64B;
+            break;
+    }
 }
 
 StreamShmCreator::~StreamShmCreator() {
@@ -188,10 +201,6 @@ std::string StreamShmCreator::get_shm_name() {
     return shm_name_;
 }
 
-void StreamShmCreator::set_client_info(ClientStatusInfo* client_info) {
-    client_info_ = client_info;
-}
-
 void StreamShmCreator::set_flag(uint32_t flag) {
     if (!shm_ptr_) {
         return;
@@ -225,6 +234,21 @@ void StreamShmCreator::set_senders_pid(uint32_t senders_pid) {
         return;
     }
     static_cast<SMALLRingQueueHeader*>(shm_ptr_)->senders_pid.store(senders_pid, std::memory_order_release);
+}
+
+uint8_t StreamShmCreator::getLogicProcessId(const std::string& shm_name) {
+    for (int i = 0; i < Define::kShmNameCount; i++) {
+        if (shm_name == Define::kShmNames[i]) {
+            return i;
+        }
+    }
+    return Define::INVALID_FD;
+}
+
+uint64_t StreamShmCreator::get_timestamp() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
 } // namespace MulProcess

@@ -8,10 +8,10 @@
 
 int main(int argc, char* argv[]) {
 #if defined(__linux__)
-    IpcInterface::MulProcess::ShmManager::getInstance()->initParams(IpcInterface::Define::Daemon, IpcInterface::Define::StatDaemon);
+    IpcInterface::MulProcess::ShmManager::getInstance()->initParams(IpcInterface::Define::Daemon);
     // 设置创建进程回调函数，在里面调用IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo函数
-    IpcInterface::MulProcess::ProcessManager::getInstance()->setCreateProcessCallback([](std::string shm_name, std::string client_name, uint32_t pid) {
-        IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo({shm_name, client_name, pid});
+    IpcInterface::MulProcess::ProcessManager::getInstance()->setCreateProcessCallback([](std::string shm_name, uint32_t pid) {
+        IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo({shm_name, pid});
     });
     IpcInterface::MulProcess::ShmManager::getInstance()->start();
     IpcInterface::MulProcess::ProcessManager::getInstance()->start();

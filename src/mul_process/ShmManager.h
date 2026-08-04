@@ -24,10 +24,9 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-// 存储名称和pid，这个是初始化进程id与消息接口名称的映射，用于初始化各个共享内存和客户端状态信息
+// 存储名称和pid，这个是初始化进程id与消息接口名称的映射，用于初始化各个共享内存
 typedef struct {
     std::string shm_name;  // 共享内存名称
-    std::string client_name;  // 客户端名称
     uint32_t pid;  // 进程id
 } PidNameInfo;
 
@@ -47,9 +46,8 @@ public:
     /**
      * @brief 初始化参数
      * @param shm_name 共享内存名称
-     * @param client_name 客户端名称
      */
-    void initParams(const std::string& shm_name, const std::string& client_name);
+    void initParams(const std::string& shm_name);
 
     /**
      * @brief 单例类
@@ -78,7 +76,7 @@ public:
     void addPidNameInfo(PidNameInfo info);
 
     /**
-     * @brief 外部线程投递一次创建一个pidinfor相对应的共享内存和客户端状态信息
+     * @brief 外部线程投递一次创建一个pidinfor相对应的共享内存
     */
     void postCreatePidNameInfo(PidNameInfo info);
 
@@ -87,6 +85,13 @@ public:
      * @param pid 进程id
     */
     void handleProcessCrash(uint32_t pid);
+
+    /**
+     * @brief 根据共享内存名称匹配逻辑进程ID
+     * @param shm_name 共享内存名称
+     * @return 逻辑进程ID，无效返回INVALID_FD
+    */
+    uint8_t getLogicProcessId(const std::string& shm_name);
     
 
 protected:
@@ -100,17 +105,6 @@ private:
     void initShm(bool create);
 
     /**
-     * @brief 初始化各个客户端状态信息
-     * @param create 是否创建客户端状态信息
-    */
-    void initClientStatusInfo(bool create);
-
-    /**
-     * @brief 初始化各个消息共享内存客户端状态信息
-    */
-    void initShmClientStatusInfo();
-
-    /**
      * @brief 初始化接收消息线程
     */
     void initReceiveWork();
@@ -121,13 +115,12 @@ private:
     void initSendWork();
 
     void openStreamShmRetry(PidNameInfo info, bool create);
-    void openClientStatusInfoRetry(PidNameInfo info, bool create);
-    void setShmClientStatusInfo(PidNameInfo info);
 
     std::map<std::string, std::unique_ptr<StreamShmCreator>> shmInfosMap_;
-    std::map<std::string, std::unique_ptr<Model::ShmCreator<ClientStatusInfo>>> clientStatusInfosMap_;
+
+    // 真实pid映射到逻辑进程ID的映射
+    std::map<uint32_t, uint8_t> realPidToLogicProcessIdMap_;
     std::string shm_name_;  // 本进程的消息接口名称
-    std::string client_name_;  // 本进程的客户端名称
     // 接收消息线程对象
     ReceiveWork* receive_work_{NULL};
     // 发送消息线程对象

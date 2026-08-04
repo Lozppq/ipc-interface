@@ -57,20 +57,6 @@ constexpr const char* Daemon = kShmNames[0];
 constexpr const char* UI     = kShmNames[1];
 constexpr const char* Worker = kShmNames[2];
 
-
-// 各个进程信息交互统计共享内存名称
-constexpr const char* kStatShmNames[] = {
-    "/ipc_stat_daemon",
-    "/ipc_stat_ui",
-    "/ipc_stat_worker",
-};
-
-constexpr uint32_t kStatShmNameCount = sizeof(kStatShmNames) / sizeof(kStatShmNames[0]);
-
-constexpr const char* StatDaemon = kStatShmNames[0];
-constexpr const char* StatUI = kStatShmNames[1];
-constexpr const char* StatWorker = kStatShmNames[2];
-
 // 各个进程之间的执行方式名称
 constexpr const char* kProcessExecutableNames[] = {
     "./daemon",
@@ -86,9 +72,10 @@ constexpr const char* WorkerExecutableName = kProcessExecutableNames[2];
 
 // 下面的使用枚举值来代替各个进程的名称
 enum{
-    Daemon_Fd = 0,
-    UI_Fd = 1,
-    Worker_Fd = 2,
+    Daemon_Fd,
+    UI_Fd,
+    Worker_Fd,
+    INVALID_FD // 无效的fd
 };
 
 } // namespace Define

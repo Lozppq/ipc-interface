@@ -112,9 +112,7 @@ uint32_t MessageThread::startTimer(int interval_ms, std::function<void()> callba
 #endif
     } else {
 #if defined(__linux__)
-        sem_t done;
-        sem_init(&done, 0, 0);
-        queue_.push([this, timer_id, interval, cb = std::move(callback), &done]() {
+        queue_.push([this, timer_id, interval, cb = std::move(callback)]() {
             timers_.insert({
                 timer_id,
                 std::chrono::steady_clock::now() + interval,
@@ -122,11 +120,8 @@ uint32_t MessageThread::startTimer(int interval_ms, std::function<void()> callba
                 std::move(cb),
                 true
             });
-            sem_post(&done);
         });
         sem_post(&sem_);
-        sem_wait(&done);
-        sem_destroy(&done);
 #else
         queue_.push([this, timer_id, interval, cb = std::move(callback)]() {
             timers_.insert({

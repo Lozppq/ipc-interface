@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../model/MessageThread.h"
-#include "../define/common.h"
+#include "../define/Common.h"
 #include <vector>
 
 namespace IpcInterface {
@@ -10,15 +10,14 @@ namespace MulProcess {
 // 进程信息
 typedef struct {
     std::string shm_name;  // 共享内存名称
-    std::string client_name;  // 客户端名称
     std::string process_executable_name;  // 进程可执行文件名称
     uint32_t pid;  // 进程id
 } ProcessInfo;
 
 class ProcessManager : public Model::MessageThread {
 public:
-    // 定义一个创建进程以后得回调函数，三个参数分别是shm_name, client_name, pid
-    using CreateProcessCallback = std::function<void(std::string shm_name, std::string client_name, int pid)>;
+    // 定义一个创建进程以后得回调函数，两个参数分别是shm_name, pid
+    using CreateProcessCallback = std::function<void(std::string shm_name, int pid)>;
     ProcessManager(const std::string& process_name = Define::Daemon);
     ~ProcessManager();
 
@@ -55,10 +54,9 @@ protected:
     /**
      * @brief 创建进程函数
      * @param shm_name 共享内存名称
-     * @param client_name 客户端名称
      * @param process_executable_name 进程可执行文件名称
      */
-    void createProcess(std::string shm_name, std::string client_name, std::string process_executable_name);
+    void createProcess(std::string shm_name, std::string process_executable_name);
 
     /**
      * @brief 处理进程崩溃共享内存的重置

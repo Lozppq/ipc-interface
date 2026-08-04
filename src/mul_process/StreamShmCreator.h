@@ -5,7 +5,7 @@
 #include <cstring>
 #include <vector>
 #include <string>
-#include "../define/common.h"
+#include "../define/Common.h"
 #if defined(__linux__)
 #include <semaphore.h>
 #endif
@@ -19,7 +19,7 @@ namespace MulProcess {
 typedef struct {
     std::atomic<uint8_t> slice_id;  // 切片id
     std::atomic<uint8_t> slice_count;  // 切片数量
-    std::atomic<bool> commit;  // 提交标志位
+    std::atomic<uint8_t> commit;  // 提交标志位
     std::atomic<uint8_t> modify_id;  // 修改者id
     uint8_t data[SMALL_DATA_SLOT_SIZE];
 }SMALLDataSlot;
@@ -27,7 +27,7 @@ typedef struct {
 typedef struct {
     std::atomic<uint8_t> slice_id;  // 切片id
     std::atomic<uint8_t> slice_count;  // 切片数量
-    std::atomic<bool> commit;  // 提交标志位
+    std::atomic<uint8_t> commit;  // 提交标志位
     std::atomic<uint8_t> modify_id;  // 修改者id
     uint8_t data[MEDIUM_DATA_SLOT_SIZE];
 }MEDIUMDataSlot;
@@ -35,7 +35,7 @@ typedef struct {
 typedef struct {
     std::atomic<uint8_t> slice_id;  // 切片id
     std::atomic<uint8_t> slice_count;  // 切片数量
-    std::atomic<bool> commit;  // 提交标志位
+    std::atomic<uint8_t> commit;  // 提交标志位
     std::atomic<uint8_t> modify_id;  // 修改者id
     uint8_t data[LARGE_DATA_SLOT_SIZE];
 }LARGEDataSlot;
@@ -99,16 +99,10 @@ typedef struct {
 } LARGERingQueueHeader;
 
 
-/**
- * @brief 客户端状态信息结构体
-**/
-typedef struct {
-    std::atomic<uint32_t> send_tail;  // 维护一个最后发送消息的尾部索引
-    std::atomic<uint32_t> send_head;  // 维护一个最后发送消息的头部索引
-    std::atomic<uint32_t> send_to_pid;  // 维护一个本进程最后发送消息给其他进程的pid
-    std::atomic<uint32_t> local_pid;  // 维护一个本进程的pid
-    std::atomic<bool> send_status;  // 维护一个最后发送消息的状态，代表是否成功发送，true成功，false失败
-}ClientStatusInfo;
+enum{
+    COMMIT_FALSE = 0,
+    COMMIT_TRUE = 1,
+};
 
 
 /**
@@ -119,6 +113,16 @@ enum : uint32_t {
     SIZE_1KB = 1024,
     SIZE_256KB = 256 * 1024,
 };
+
+// 不同级别槽位的超时时间限制，单位微妙，不能设置太小，避免高优先级线程调度问题
+enum : uint32_t {
+    TIMEOUT_64B = 10000,
+    TIMEOUT_1KB = 20000,
+    TIMEOUT_256KB = 50000,
+};
+
+// 这个代表最大分片的数量，目前分片id是uint8_t类型，所以最大分片数量为255
+constexpr uint32_t MAX_SLICE_COUNT = 255;
 
 class StreamShmCreator {
 public:
@@ -192,12 +196,6 @@ public:
     std::string get_shm_name(); 
     
     /**
-     * @brief 设置客户端信息指针
-     * @param client_info 客户端信息指针
-     */
-    void set_client_info(ClientStatusInfo* client_info);
-
-    /**
      * @brief 设置标志位
      * @param flag 标志位
      */
@@ -232,6 +230,19 @@ public:
     */
     void reset_shm();
 
+    /**
+     * @brief 根据共享内存名称匹配逻辑进程ID
+     * @param shm_name 共享内存名称
+     * @return 逻辑进程ID，无效返回INVALID_FD
+    */
+    uint8_t getLogicProcessId(const std::string& shm_name);
+
+    /**
+     * @brief 获取当前时间戳
+     * @return 相对开机的单调时钟微秒数（steady_clock / CLOCK_MONOTONIC）
+    */
+    uint64_t get_timestamp();
+
 private:
     /**
      * @brief 创建共享内存结构体
@@ -252,12 +263,13 @@ private:
     int shm_fd_;
     void* shm_ptr_;
     bool is_owner_;
-    ClientStatusInfo* client_info_;
+    uint8_t logic_process_id_;
+    uint64_t slot_timeout_;
 };
 
 template<typename Header>
 int StreamShmCreator::send_impl(Header* hdr, const std::vector<uint8_t>& msg) {
-    if ((hdr->flag.load(std::memory_order_acquire) & Define::BIT0) == 0) {
+    if (!hdr || (hdr->flag.load(std::memory_order_acquire) & Define::BIT0) == 0) {
         return -1;
     }
 
@@ -305,7 +317,7 @@ int StreamShmCreator::send_impl(Header* hdr, const std::vector<uint8_t>& msg) {
         }
 
         // 提交slice信息
-        hdr->data[old_tail].commit.store(true, std::memory_order_release);
+        hdr->data[old_tail].commit.store(COMMIT_TRUE, std::memory_order_release);
         old_tail = (old_tail + 1) % slot_count_;
         t_slice_id += 1;
         t_msg_index += t_len;
@@ -314,13 +326,12 @@ int StreamShmCreator::send_impl(Header* hdr, const std::vector<uint8_t>& msg) {
 #if defined(__linux__)
     sem_post(&hdr->sem);
 #endif
-
     return msg.size();
 }
 
 template<typename Header>
 uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
-    if ((hdr->flag.load(std::memory_order_acquire) & Define::BIT1) == 0) {
+    if (!hdr || (hdr->flag.load(std::memory_order_acquire) & Define::BIT1) == 0) {
         return 0;
     }
 
@@ -333,12 +344,16 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
         return 0;
     }
 
-    uint32_t head, slice_count = 0, t_msg_index = 0;
+    // 用于计算槽接收超时
+    uint64_t start_time = get_timestamp();
+
+    uint32_t head, slice_count = 0, t_msg_index = 0, tail_last = 0;
+    head = hdr->head.load(std::memory_order_acquire);
     // 获取数据
     while (1) {
-        head = hdr->head.load(std::memory_order_acquire);
         // 如果已经提交了标志位
-        if (hdr->data[head].commit.load(std::memory_order_acquire)) {
+        if (hdr->data[head].commit.load(std::memory_order_acquire) == COMMIT_TRUE) {
+            start_time = get_timestamp();
             if (slice_count == 0) {
                 slice_count = hdr->data[head].slice_count.load(std::memory_order_acquire);
                 hdr->data[head].slice_id.store(0, std::memory_order_release);
@@ -348,7 +363,7 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
                 memcpy(&total_len, hdr->data[head].data, 4);
                 if (total_len == 0) {
                     hdr->head.store(head + 1, std::memory_order_release);
-                    hdr->data[head].commit.store(false, std::memory_order_release);
+                    hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
                     slice_count = 0;
                     continue;
                 }
@@ -359,11 +374,40 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
                 memcpy(buf.data() + t_msg_index, hdr->data[head].data, slot_size_);
                 t_msg_index += slot_size_;
             }
-            hdr->data[head].commit.store(false, std::memory_order_release);
+            hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
             if (slice_count == hdr->data[head].slice_id.load(std::memory_order_acquire)) {
                 break;
             }
             head = (head + 1) % slot_count_;
+        } else {
+            // 这里需要计算，如果等待当前槽位到固定tail超时，则直接将当前槽位数据丢弃再break
+            uint32_t tail = hdr->tail.load(std::memory_order_acquire);
+            uint32_t not_commit_head = head, not_commit_tail;
+            if ((tail - head + slot_count_) % slot_count_ > MAX_SLICE_COUNT){
+                not_commit_tail = (head + MAX_SLICE_COUNT) % slot_count_;
+            } else {
+                not_commit_tail = tail;
+            }
+
+            // 计算从当前未commit到commit的最大槽位
+            while (not_commit_head != not_commit_tail){
+                if (hdr->data[not_commit_head].commit.load(std::memory_order_acquire) == COMMIT_TRUE){
+                    break;
+                } else {
+                    not_commit_head = (not_commit_head + 1) % slot_count_;
+                }
+            }
+
+            if (tail_last != not_commit_head){
+                tail_last = not_commit_head;
+                start_time = get_timestamp();
+            } else if (get_timestamp() - start_time > slot_timeout_){ // 进入这里说明找到了一直未提交的tail，进入超时处理
+                LOG_ERROR("StreamShmCreator::recv_impl timeout,name=%s,head=%d,not_commit_head=%d", shm_name_.c_str(), head, not_commit_head);
+                buf.clear();
+                t_msg_index = 0;
+                head = not_commit_head;
+                break;
+            }
         }
     }
     hdr->head.store(head, std::memory_order_release);

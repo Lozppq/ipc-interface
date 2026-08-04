@@ -5,6 +5,7 @@
 
 
 #include "ProcessManager.h"
+#include "../log/Log_Print.h"
 
 namespace IpcInterface {
 namespace MulProcess {
@@ -34,22 +35,22 @@ void ProcessManager::setCreateProcessCallback(CreateProcessCallback callback) {
 
 void ProcessManager::initCreateProcess() {
     for (int i = 0; i < Define::kShmNameCount; i++) {
-        createProcess(Define::kShmNames[i], Define::kClientNames[i], Define::kProcessExecutableNames[i]);
+        createProcess(Define::kShmNames[i], Define::kProcessExecutableNames[i]);
     }
 }
 
-void ProcessManager::createProcess(std::string shm_name, std::string client_name, std::string process_executable_name){
+void ProcessManager::createProcess(std::string shm_name, std::string process_executable_name){
     uint32_t pid = startProcess(process_executable_name);
     if (pid > 0) {
-        process_infos_.push_back({shm_name, client_name, process_executable_name, pid});
+        process_infos_.push_back({shm_name, process_executable_name, pid});
         if (create_process_callback_) {
-            create_process_callback_(shm_name, client_name, pid);
+            create_process_callback_(shm_name, pid);
         }
-        LOG_INFO("ProcessManager: create process success, shm_name: %s, client_name: %s, pid: %d", shm_name.c_str(), client_name.c_str(), pid);
+        LOG_INFO("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
     } else {
-        LOG_ERROR("ProcessManager: failed, shm_name: %s, client_name: %s, process_executable_name: %s, pid: %d", shm_name.c_str(), client_name.c_str(), process_executable_name.c_str(), pid);
-        postTimer(1000, [this, shm_name, client_name, process_executable_name]() {
-            createProcess(shm_name, client_name, process_executable_name);
+        LOG_ERROR("ProcessManager: failed, shm_name: %s, process_executable_name: %s, pid: %d", shm_name.c_str(), process_executable_name.c_str(), pid);
+        postTimer(1000, [this, shm_name, process_executable_name]() {
+            createProcess(shm_name, process_executable_name);
         });
     }
 }
@@ -81,10 +82,9 @@ void ProcessManager::handleProcessCrash(uint32_t pid) {
     if (it != process_infos_.end()) {
         // 如果找到，则重新创建进程，并把原来的记录删除
         std::string shm_name = std::move(it->shm_name);
-        std::string client_name = std::move(it->client_name);
         std::string process_executable_name = std::move(it->process_executable_name);
         process_infos_.erase(it);
-        createProcess(shm_name, client_name, process_executable_name);
+        createProcess(shm_name, process_executable_name);
     } else {
         LOG_ERROR("ProcessManager: process not found, pid: %d", pid);
     }
