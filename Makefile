@@ -1,16 +1,16 @@
 # ipc-interface 构建
 #
-# 本地编译:
+# 本地编译（Linux）:
 #   make
 #
-# 交叉编译 (示例):
+# 交叉编译示例:
 #   make CROSS_COMPILE=aarch64-linux-gnu-
 #
 # 输出:
-#   build/include/              公开头文件
+#   build/include/                 公开头文件
 #   build/lib/libipc-interface.so
-#   build/bin/daemon            守护进程
-#   build/bin/<demo>            demo/*.cpp 各一个可执行文件
+#   build/bin/daemon               守护进程
+#   build/bin/ui  build/bin/worker demo 进程
 
 CROSS_COMPILE ?=
 CXX      := $(CROSS_COMPILE)g++
@@ -35,7 +35,9 @@ LIB_SRCS := \
 	src/mul_process/ShmManager.cpp \
 	src/mul_process/StreamShmCreator.cpp \
 	src/mul_process/ReceiveWork.cpp \
-	src/mul_process/SendWork.cpp
+	src/mul_process/SendWork.cpp \
+	src/mul_process/ProcessManager.cpp \
+	src/log/Log_Print.cpp
 
 LIB_OBJS := $(patsubst src/%.cpp,$(BUILD_OBJ)/%.o,$(LIB_SRCS))
 
@@ -90,7 +92,7 @@ $(BUILD_INC) $(BUILD_LIB) $(BUILD_BIN):
 	@mkdir -p $@
 
 $(BUILD_OBJ):
-	@mkdir -p $(BUILD_OBJ)/model $(BUILD_OBJ)/mul_process $(BUILD_OBJ)/daemon
+	@mkdir -p $(BUILD_OBJ)/model $(BUILD_OBJ)/mul_process $(BUILD_OBJ)/daemon $(BUILD_OBJ)/log
 
 clean:
 	rm -rf $(BUILD_DIR)

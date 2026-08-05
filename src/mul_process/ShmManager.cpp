@@ -8,7 +8,10 @@
 
 #include "ShmManager.h"
 #include "../define/Common.h"
+#include "../log/Log_Print.h"
 #include "StreamShmCreator.h"
+#include <algorithm>
+#include <memory>
 #if defined(__linux__)
 #include <unistd.h>
 #endif
@@ -158,6 +161,15 @@ void ShmManager::send(std::vector<uint8_t>& msg, std::string shm_name) {
     send_work_->send(msg, it->second.get());
 }
 
+void ShmManager::onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag) {
+    if (!tag || tag->data.empty()) {
+        return;
+    }
+    LOG_INFO("ShmManager[%s] recv %zu bytes: %s",
+        shm_name_.c_str(), tag->data.size(),
+        reinterpret_cast<const char*>(tag->data.data()));
+}
+
 void ShmManager::handleProcessCrash(uint32_t pid) {
     // 先找到pidNameInfos_中pid对应的PidNameInfo，如果是进程通信的shm只需要重置，其他的临时通道需要直接删除
     for (int i = 0; i < pidNameInfos_.size(); ) {
@@ -171,7 +183,7 @@ void ShmManager::handleProcessCrash(uint32_t pid) {
                     
                     i++;
                 } else {
-                    // 删除临时共享内存
+                    // 删除临时共享内存，在这里还需要通知接收方关闭共享内存，具体的需要一个策略，按照分配messageID来抉择
                     it_shm->second->delete_shm();
                     
                     shmInfosMap_.erase(it_shm);

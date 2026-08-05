@@ -6,7 +6,13 @@
 
 #include "ProcessManager.h"
 #include "../log/Log_Print.h"
+#include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#if defined(__linux__)
+#include <unistd.h>
+#endif
 
 namespace IpcInterface {
 namespace MulProcess {
@@ -35,7 +41,11 @@ void ProcessManager::setCreateProcessCallback(CreateProcessCallback callback) {
 }
 
 void ProcessManager::initCreateProcess() {
+    // 不拉起 daemon 自身，只拉起业务子进程（ui/worker/...）
     for (int i = 0; i < Define::kShmNameCount; i++) {
+        if (Define::kShmNames[i] == Define::Daemon) {
+            continue;
+        }
         createProcess(Define::kShmNames[i], Define::kProcessExecutableNames[i]);
     }
 }
@@ -125,7 +135,7 @@ void ProcessManager::handleProcessCrash(uint32_t pid) {
 
 void ProcessManager::initProcessSyncShm() {
     process_sync_shm_creator_ = std::make_shared<Model::ShmCreator<Define::ProcessSyncInfo>>(Define::ProcessSyncShmName, sizeof(Define::ProcessSyncInfo));
-    if (process_sync_shm_creator_ && process_sync_shm_creator_->get_shm_ptr() && process_sync_shm_creator_->open(true)) {
+    if (process_sync_shm_creator_ && process_sync_shm_creator_->open(true) && process_sync_shm_creator_->get_shm_ptr()) {
         LOG_INFO("ProcessManager: init process sync shm success, shm_name: %s", Define::ProcessSyncShmName);
         auto process_sync_info = process_sync_shm_creator_->get_shm_ptr();
 
