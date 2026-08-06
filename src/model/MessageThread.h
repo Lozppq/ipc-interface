@@ -2,7 +2,7 @@
  * @file MessageThread.h
  * @brief 消息线程类
  * @details 继承自 ThreadBase，实现支持消息投递和定时器功能的线程模型。
- * 使用无锁队列存储任务，信号量实现阻塞唤醒，优先队列管理定时器，
+ * 使用无锁队列存储任务，eventfd+poll 阻塞唤醒，优先队列管理定时器，
  * 所有任务（消息、定时器回调）统一在工作线程中执行，保证线程安全。
  */
 
@@ -14,9 +14,7 @@
 #include <chrono>
 #include <set>
 #include <thread>
-#if defined(__linux__)
-#include <semaphore.h>
-#endif
+#include <atomic>
 
 namespace IpcInterface {
 namespace Model {
@@ -28,9 +26,9 @@ public:
      * @param name 工作线程名
      */
     explicit MessageThread(size_t queue_size = 1024, std::string name = {});
-    
+
     /**
-     * @brief 析构函数，停止线程并销毁信号量
+     * @brief 析构函数，停止线程并关闭 eventfd
      */
     ~MessageThread();
 
@@ -39,7 +37,7 @@ public:
      * @param task 任务回调函数
      */
     void post(std::function<void()> task);
-    
+
     /**
      * @brief 投递一次性定时器任务
      * @param delay_ms 延迟毫秒数
@@ -47,7 +45,7 @@ public:
      * @return 定时器id
      */
     uint32_t postTimer(int delay_ms, std::function<void()> callback);
-    
+
     /**
      * @brief 启动周期性定时器
      * @param interval_ms 周期毫秒数
@@ -88,12 +86,13 @@ private:
             return id < other.id;
         }
     };
-private:
-    
-    LockFreeQueue<std::function<void()>> queue_;  // 无锁任务队列
-#if defined(__linux__)
-    sem_t sem_;                                   // 唤醒信号量
-#endif
+
+    void wake(int efd);
+    void drain(int efd);
+
+    LockFreeQueue<std::function<void()>> queue_;
+
+    int efd_{-1}; // eventfd文件描述符，用于唤醒线程
     std::set<Timer> timers_; // 定时器堆
     std::atomic<uint32_t> timer_ids_;  // 定时器id，自增id，用于区分不同的定时器
 };
