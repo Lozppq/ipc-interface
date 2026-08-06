@@ -6,6 +6,9 @@
  * 所有定时器操作通过任务队列传递到工作线程，避免并发访问风险。
  */
 
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include "MessageThread.h"
 #include <vector>
 #if defined(__linux__)
@@ -166,21 +169,28 @@ void MessageThread::Run() {
             sem_wait(&sem_);
 #endif
         } else {
-            // 有定时器，计算剩余时间，带超时等待
-            auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-                timers_.begin()->expiry - now);
-            if (remaining.count() > 0) {
+            auto remaining = timers_.begin()->expiry - now;
+            if (remaining > std::chrono::steady_clock::duration::zero()) {
 #if defined(__linux__)
-                const auto wait_ms = remaining.count();
-                timespec ts;
-                clock_gettime(CLOCK_REALTIME, &ts);
-                ts.tv_sec += wait_ms / 1000;
-                ts.tv_nsec += (wait_ms % 1000) * 1000000L;
-                if (ts.tv_nsec >= 1000000000) {
-                    ts.tv_sec += 1;
-                    ts.tv_nsec -= 1000000000;
+                const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining).count();
+                timespec ts{};
+#if defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 30))
+                constexpr clockid_t clk = CLOCK_MONOTONIC;
+#else
+                constexpr clockid_t clk = CLOCK_REALTIME;
+#endif
+                clock_gettime(clk, &ts);
+                ts.tv_sec += ns / 1000000000L;
+                ts.tv_nsec += ns % 1000000000L;
+                if (ts.tv_nsec >= 1000000000L) {
+                    ++ts.tv_sec;
+                    ts.tv_nsec -= 1000000000L;
                 }
-                sem_timedwait(&sem_, &ts);
+#if defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 30))
+                sem_clockwait(&sem_, CLOCK_MONOTONIC, &ts);
+#else
+                sem_timedwait(&sem_, &ts); // 老接口使用系统时间，要多注意校时影响
+#endif
 #endif
             }
         }
