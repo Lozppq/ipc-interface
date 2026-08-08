@@ -84,7 +84,7 @@ void LogPrint::printLog(int level, const char* fmt, ...) {
     // 内容区：预留最后 2 字节给 '\n' 和 '\0'
     constexpr int kBodyCap = static_cast<int>(sizeof(buf)) - 2;  // 最多写到这里
     int off = snprintf(buf, kBodyCap + 1, "%s %s [%s] [%ld] ",
-                       time_buf, g_log_prefix_storage.c_str(), level_tag, tid);
+                       time_buf, level_tag, g_log_prefix_storage.c_str(), tid);
     if (off < 0) off = 0;
     else if (off > kBodyCap) off = kBodyCap;
     va_list args;
