@@ -22,7 +22,7 @@ int main() {
         char text[128];
         std::snprintf(text, sizeof(text), "hello from process_1 #%d", seq++);
         std::vector<uint8_t> msg(text, text + std::strlen(text) + 1);
-        mgr->send(msg, IpcInterface::Define::Process2);
+        mgr->send(std::move(msg), IpcInterface::Define::Process2);
         sleep(1);
     }
     return 0;

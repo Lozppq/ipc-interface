@@ -61,7 +61,7 @@ public:
      * @brief 发送消息
      * @param msg 消息数据
      */
-    void send(std::vector<uint8_t>& msg, std::string shm_name);
+    void send(std::vector<uint8_t> msg, std::string shm_name);
 
     /**
      * @brief 接收线程消息回调

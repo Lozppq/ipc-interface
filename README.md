@@ -81,7 +81,7 @@ int main() {
     mgr->start();
 
     std::vector<uint8_t> msg = {/* ... */};
-    mgr->send(msg, IpcInterface::Define::Process2);  // 发到对端队列名
+    mgr->send(std::move(msg), IpcInterface::Define::Process2);  // 移交所有权后异步发送
 
     mgr->wait();  // 或自行保活
     return 0;

@@ -150,7 +150,7 @@ void ShmManager::initSendWork() {
     send_work_->start();
 }
 
-void ShmManager::send(std::vector<uint8_t>& msg, std::string shm_name) {
+void ShmManager::send(std::vector<uint8_t> msg, std::string shm_name) {
     if (!send_work_) {
         return;
     }
@@ -158,7 +158,7 @@ void ShmManager::send(std::vector<uint8_t>& msg, std::string shm_name) {
     if (it == shmInfosMap_.end() || !it->second) {
         return;
     }
-    send_work_->send(msg, it->second.get());
+    send_work_->send(std::move(msg), it->second.get());
 }
 
 void ShmManager::onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag) {
