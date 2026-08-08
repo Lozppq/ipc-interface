@@ -21,7 +21,8 @@ namespace Model {
 void MessageThread::wake(int efd) {
 #if defined(__linux__)
     uint64_t one = 1;
-    (void)write(efd, &one, sizeof(one));
+    ssize_t n = write(efd, &one, sizeof(one));
+    (void)n;
 #else
     (void)efd;
 #endif
@@ -30,7 +31,8 @@ void MessageThread::wake(int efd) {
 void MessageThread::drain(int efd) {
 #if defined(__linux__)
     uint64_t cnt;
-    (void)read(efd, &cnt, sizeof(cnt));
+    ssize_t n = read(efd, &cnt, sizeof(cnt));
+    (void)n;
 #else
     (void)efd;
 #endif

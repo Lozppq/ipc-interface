@@ -1,4 +1,5 @@
 #include "StreamShmCreator.h"
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -53,7 +54,10 @@ bool StreamShmCreator::create_shm(bool create) {
         total_size_ = static_cast<uint32_t>(st.st_size);
     } else {
         total_size_ = sizeof(SMALLRingQueueHeader) + slot_count_ * (offsetof(SMALLDataSlot, data) + slot_size_);
-        ftruncate(shm_fd_, total_size_);
+        if (ftruncate(shm_fd_, total_size_) != 0) {
+            LOG_ERROR("StreamShmCreator: ftruncate failed, total_size_ = %u", total_size_);
+            return false;
+        }
     }
 
     void* ptr = mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
