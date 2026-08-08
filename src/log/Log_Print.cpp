@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdarg>
 #include <ctime>
+#include <string>
 #if defined(__linux__)
 #include <unistd.h>
 #include <sys/syscall.h>
@@ -15,11 +16,22 @@
 namespace IpcInterface {
 namespace Log {
 
+// 仅本翻译单元使用；static 保证内部链接，不进头文件
+static std::string g_log_prefix_storage = "unknown";
+
 // 默认不打印debug级别的日志
-uint32_t g_log_level = Level_Info | Level_Warning | Level_Error;
+static uint32_t g_log_level = Level_Info | Level_Warning | Level_Error;
 
 void setLogLevel(uint32_t level) {
     g_log_level = level;
+}
+
+void setLogPrefix(const char* prefix) {
+    if (prefix && prefix[0] != '\0') {
+        g_log_prefix_storage = prefix;
+    } else {
+        g_log_prefix_storage = "unknown";
+    }
 }
 
 LogPrint::LogPrint() {
@@ -71,7 +83,8 @@ void LogPrint::printLog(int level, const char* fmt, ...) {
     char buf[1024];
     // 内容区：预留最后 2 字节给 '\n' 和 '\0'
     constexpr int kBodyCap = static_cast<int>(sizeof(buf)) - 2;  // 最多写到这里
-    int off = snprintf(buf, kBodyCap + 1, "%s %s [%ld] ", time_buf, level_tag, tid);
+    int off = snprintf(buf, kBodyCap + 1, "%s %s [%s] [%ld] ",
+                       time_buf, g_log_prefix_storage.c_str(), level_tag, tid);
     if (off < 0) off = 0;
     else if (off > kBodyCap) off = kBodyCap;
     va_list args;

@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 int main() {
+    IpcInterface::Log::setLogPrefix("process_1");
     auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
     mgr->initParams(IpcInterface::Define::Process1);
     mgr->start();

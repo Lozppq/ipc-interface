@@ -14,11 +14,14 @@ enum{
     Level_All = 0x0F,
 };
 
-// 打印日志级别控制的一个变量，控制哪些级别的日志可以打印，直接定义一个无符号整数
-extern uint32_t g_log_level;
-
 // 设置日志级别
 void setLogLevel(uint32_t level);
+
+/**
+ * @brief 设置日志前缀（内部拷贝保存，调用后一直生效）
+ * @param prefix 前缀字符串；空或 nullptr 时回退为 "ipc-interface"
+ */
+void setLogPrefix(const char* prefix);
 
 class LogPrint {
 public:

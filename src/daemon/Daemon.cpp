@@ -10,6 +10,7 @@
 
 int main(int argc, char* argv[]) {
 #if defined(__linux__)
+    IpcInterface::Log::setLogPrefix("daemon");
     IpcInterface::MulProcess::ShmManager::getInstance()->initParams(IpcInterface::Define::Daemon);
     // 子进程拉起后，把 shm_name/pid 登记到 ShmManager
     IpcInterface::MulProcess::ProcessManager::getInstance()->setCreateProcessCallback(
