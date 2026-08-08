@@ -47,37 +47,45 @@ constexpr const char* kPrefix = "/ipc_";
 // 各进程消息队列共享内存名（下标可与进程角色对应）
 constexpr const char* kShmNames[] = {
     "/ipc_daemon",
-    "/ipc_ui",
-    "/ipc_worker",
+    "/ipc_process_1",
+    "/ipc_process_2",
 };
 
 constexpr uint32_t kShmNameCount = sizeof(kShmNames) / sizeof(kShmNames[0]);
 
 // 便于按名字取用
 constexpr const char* Daemon = kShmNames[0];
-constexpr const char* UI     = kShmNames[1];
-constexpr const char* Worker = kShmNames[2];
+constexpr const char* Process1 = kShmNames[1];
+constexpr const char* Process2 = kShmNames[2];
 
 // 各个进程之间的执行方式名称
 constexpr const char* kProcessExecutableNames[] = {
     "./daemon",
-    "./ui",
-    "./worker",
+    "./process_1",
+    "./process_2",
 };
 
 constexpr uint32_t kProcessExecutableNameCount = sizeof(kProcessExecutableNames) / sizeof(kProcessExecutableNames[0]);
 
 constexpr const char* DaemonExecutableName = kProcessExecutableNames[0];
-constexpr const char* UIExecutableName = kProcessExecutableNames[1];
-constexpr const char* WorkerExecutableName = kProcessExecutableNames[2];
+constexpr const char* Process1ExecutableName = kProcessExecutableNames[1];
+constexpr const char* Process2ExecutableName = kProcessExecutableNames[2];
 
-// 下面的使用枚举值来代替各个进程的名称
-enum{
-    Daemon_Fd,
-    UI_Fd,
-    Worker_Fd,
-    INVALID_FD // 无效的fd
+// 逻辑进程槽位（与 kShmNames 下标一致，用作 ProcessSyncInfo::flags 下标；不是系统 fd）
+enum {
+    Daemon_Fd = 0,
+    Process1_Fd,
+    Process2_Fd,
+    INVALID_FD  // 哨兵，须等于 kShmNameCount
 };
+
+// 断言，确保各槽位下标与 kShmNames 下标一致，避免出现低级错误
+static_assert(Daemon_Fd == 0, "Daemon_Fd must be 0");
+static_assert(Process1_Fd == 1, "Process1_Fd must match kShmNames[1]");
+static_assert(Process2_Fd == 2, "Process2_Fd must match kShmNames[2]");
+static_assert(INVALID_FD == kShmNameCount, "INVALID_FD must equal kShmNameCount");
+static_assert(kShmNameCount == kProcessExecutableNameCount,
+              "shm name count must match executable name count");
 
 // 用于控制各个进程之间的同步，解决某些进程需要依赖某个进程执行一些初始化才能正常运行的问题
 enum{
@@ -86,10 +94,10 @@ enum{
     // 进程同步完成标志
     PROCESS_SYNC_FLAG_DONE = 1,
 };
+
+// flags[Daemon_Fd / Process1_Fd / ...] 表示对应槽位是否同步完成
 typedef struct {
-    std::atomic<uint8_t> daemon_sync_flag;
-    std::atomic<uint8_t> ui_sync_flag;
-    std::atomic<uint8_t> worker_sync_flag;
+    std::atomic<uint8_t> flags[kShmNameCount];
 } ProcessSyncInfo;
 
 // 进程同步结构体共享内存名称

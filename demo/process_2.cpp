@@ -1,6 +1,6 @@
 /**
- * @file ui.cpp
- * @brief UI 进程 demo：初始化后周期性向 Worker 发消息，并接收发往本进程队列的消息
+ * @file process_2.cpp
+ * @brief process_2 demo：初始化后周期性向 process_1 发消息
  */
 #include "mul_process/ShmManager.h"
 #include "define/Common.h"
@@ -12,17 +12,17 @@
 
 int main() {
     auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
-    mgr->initParams(IpcInterface::Define::UI);
+    mgr->initParams(IpcInterface::Define::Process2);
     mgr->start();
 
-    LOG_INFO("ui started, pid=%d", getpid());
+    LOG_INFO("process_2 started, pid=%d", getpid());
 
     int seq = 0;
     while (true) {
         char text[128];
-        std::snprintf(text, sizeof(text), "hello from ui #%d", seq++);
+        std::snprintf(text, sizeof(text), "hello from process_2 #%d", seq++);
         std::vector<uint8_t> msg(text, text + std::strlen(text) + 1);
-        mgr->send(msg, IpcInterface::Define::Worker);
+        mgr->send(msg, IpcInterface::Define::Process1);
         sleep(1);
     }
     return 0;

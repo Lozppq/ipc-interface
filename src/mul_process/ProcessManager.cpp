@@ -41,9 +41,9 @@ void ProcessManager::setCreateProcessCallback(CreateProcessCallback callback) {
 }
 
 void ProcessManager::initCreateProcess() {
-    // 不拉起 daemon 自身，只拉起业务子进程（ui/worker/...）
+    // 不拉起 daemon 自身，只拉起业务子进程（process_1 / process_2 / ...）
     for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
-        if (Define::kShmNames[i] == Define::Daemon) {
+        if (i == Define::Daemon_Fd) {
             continue;
         }
         createProcess(Define::kShmNames[i], Define::kProcessExecutableNames[i]);
@@ -77,14 +77,18 @@ bool ProcessManager::isAllowCreateProcess(std::string shm_name) {
     if (!process_sync_shm_creator_ || !process_sync_shm_creator_->get_shm_ptr()) {
         return false;
     }
-    if (shm_name == Define::Daemon) {
-        return process_sync_shm_creator_->get_shm_ptr()->daemon_sync_flag.load(std::memory_order_acquire) == Define::PROCESS_SYNC_FLAG_DONE;
-    } else if (shm_name == Define::UI) {
-        return process_sync_shm_creator_->get_shm_ptr()->ui_sync_flag.load(std::memory_order_acquire) == Define::PROCESS_SYNC_FLAG_DONE;
-    } else if (shm_name == Define::Worker) {
-        return process_sync_shm_creator_->get_shm_ptr()->worker_sync_flag.load(std::memory_order_acquire) == Define::PROCESS_SYNC_FLAG_DONE;
+    uint32_t fd = Define::INVALID_FD;
+    for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
+        if (shm_name == Define::kShmNames[i]) {
+            fd = i;
+            break;
+        }
     }
-    return false;
+    if (fd >= Define::kShmNameCount) {
+        return false;
+    }
+    return process_sync_shm_creator_->get_shm_ptr()->flags[fd].load(std::memory_order_acquire)
+        == Define::PROCESS_SYNC_FLAG_DONE;
 }
 
 bool ProcessManager::isNeedActivePullProcess(uint32_t pid) {
@@ -139,10 +143,10 @@ void ProcessManager::initProcessSyncShm() {
         LOG_INFO("ProcessManager: init process sync shm success, shm_name: %s", Define::ProcessSyncShmName);
         auto process_sync_info = process_sync_shm_creator_->get_shm_ptr();
 
-        // 这里没有特殊要求全部按照已同步处理
-        process_sync_info->daemon_sync_flag.store(Define::PROCESS_SYNC_FLAG_DONE);
-        process_sync_info->ui_sync_flag.store(Define::PROCESS_SYNC_FLAG_DONE);
-        process_sync_info->worker_sync_flag.store(Define::PROCESS_SYNC_FLAG_DONE);
+        // 暂无全部按已同步处理；后续可按槽位 flags[Daemon_Fd/ProcessN_Fd] 分别置位
+        for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
+            process_sync_info->flags[i].store(Define::PROCESS_SYNC_FLAG_DONE, std::memory_order_release);
+        }
     } else {
         LOG_ERROR("ProcessManager: init process sync shm failed, shm_name: %s", Define::ProcessSyncShmName);
         postTimer(100, [this]() {

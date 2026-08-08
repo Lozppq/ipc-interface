@@ -10,7 +10,7 @@
 #   build/include/                 公开头文件
 #   build/lib/libipc-interface.so
 #   build/bin/daemon               守护进程
-#   build/bin/ui  build/bin/worker demo 进程
+#   build/bin/process_1  build/bin/process_2  demo 进程
 
 CROSS_COMPILE ?=
 CXX      := $(CROSS_COMPILE)g++
