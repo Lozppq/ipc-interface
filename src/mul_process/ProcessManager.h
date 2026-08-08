@@ -50,6 +50,12 @@ public:
      */
     bool isNeedActivePullProcess(uint32_t pid);
 
+    /**
+     * @brief 处理进程崩溃共享内存的重置
+     * @param pid 进程id
+    */
+    void handleProcessCrash(uint32_t pid);
+
 protected:
 
     /**
@@ -70,12 +76,6 @@ protected:
      * @param process_executable_name 进程可执行文件名称
      */
     void createProcess(std::string shm_name, std::string process_executable_name);
-
-    /**
-     * @brief 处理进程崩溃共享内存的重置
-     * @param pid 进程id
-    */
-    void handleProcessCrash(uint32_t pid);
     
     /**
      * @brief 初始化进程同步信息共享内存

@@ -17,9 +17,9 @@ size_t LockFreeQueue<T>::roundUpToPowerOf2(size_t n) {
 
 template<typename T>
 LockFreeQueue<T>::LockFreeQueue(size_t capacity)
-    : capacity_(roundUpToPowerOf2(capacity)),
-      mask_(roundUpToPowerOf2(capacity) - 1),
-      buffer_(new Node[roundUpToPowerOf2(capacity)]) {
+    : buffer_(new Node[roundUpToPowerOf2(capacity)]),
+      capacity_(roundUpToPowerOf2(capacity)),
+      mask_(roundUpToPowerOf2(capacity) - 1) {
 }
 
 template<typename T>

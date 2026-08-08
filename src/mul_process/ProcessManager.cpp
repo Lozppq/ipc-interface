@@ -42,7 +42,7 @@ void ProcessManager::setCreateProcessCallback(CreateProcessCallback callback) {
 
 void ProcessManager::initCreateProcess() {
     // 不拉起 daemon 自身，只拉起业务子进程（ui/worker/...）
-    for (int i = 0; i < Define::kShmNameCount; i++) {
+    for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
         if (Define::kShmNames[i] == Define::Daemon) {
             continue;
         }

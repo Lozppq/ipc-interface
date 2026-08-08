@@ -6,11 +6,11 @@
 
 template<typename T>
 ShmCreator<T>::ShmCreator(const std::string& name, uint32_t total_size) 
-    : shm_name_(name), 
-    total_size_(total_size), 
-    shm_fd_(-1),
-    shm_ptr_(NULL),
-    is_owner_(false) {
+    : total_size_(total_size),
+      shm_ptr_(NULL),
+      shm_fd_(-1),
+      is_owner_(false),
+      shm_name_(name) {
     
 }
 

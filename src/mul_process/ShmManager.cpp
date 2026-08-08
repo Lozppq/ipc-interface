@@ -46,7 +46,7 @@ void ShmManager::initParams(const std::string& shm_name) {
         addPidNameInfo({shm_name, pid});
     } else { 
         // 不是守护进程，初始化添加所有进程，先默认使用当前进程pid，实则除了守护进程会使用这个pid，其他的进程一般不会使用，共享内存里面有一份就足够了
-        for (int i = 0; i < Define::kShmNameCount; i++) {
+        for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
             addPidNameInfo({Define::kShmNames[i], pid});
         }
     }
@@ -172,7 +172,7 @@ void ShmManager::onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag) {
 
 void ShmManager::handleProcessCrash(uint32_t pid) {
     // 先找到pidNameInfos_中pid对应的PidNameInfo，如果是进程通信的shm只需要重置，其他的临时通道需要直接删除
-    for (int i = 0; i < pidNameInfos_.size(); ) {
+    for (size_t i = 0; i < pidNameInfos_.size(); ) {
         if (pidNameInfos_[i].pid == pid) {
             uint8_t logic_process_id = getLogicProcessId(pidNameInfos_[i].shm_name);
             auto it_shm = shmInfosMap_.find(pidNameInfos_[i].shm_name);
@@ -199,7 +199,7 @@ void ShmManager::handleProcessCrash(uint32_t pid) {
 }
 
 uint8_t ShmManager::getLogicProcessId(const std::string& shm_name) {
-    for (int i = 0; i < Define::kShmNameCount; i++) {
+    for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
         if (shm_name == Define::kShmNames[i]) {
             return i;
         }

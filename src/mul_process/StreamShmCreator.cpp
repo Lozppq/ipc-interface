@@ -3,7 +3,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <chrono>
-#include "../log/Log_Print.h"
 #if defined(__linux__)
 #include <unistd.h>
 #include <sys/mman.h>
@@ -237,7 +236,7 @@ void StreamShmCreator::set_senders_pid(uint32_t senders_pid) {
 }
 
 uint8_t StreamShmCreator::getLogicProcessId(const std::string& shm_name) {
-    for (int i = 0; i < Define::kShmNameCount; i++) {
+    for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
         if (shm_name == Define::kShmNames[i]) {
             return i;
         }

@@ -40,10 +40,10 @@ public:
 };
 
 // 日志打印宏
-#define LOG_INFO(fmt, ...) LogPrint::getInstance()->printLog(Level_Info, fmt, ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...) LogPrint::getInstance()->printLog(Level_Warning, fmt, ##__VA_ARGS__)
-#define LOG_ERROR(fmt, ...) LogPrint::getInstance()->printLog(Level_Error, fmt, ##__VA_ARGS__)
-#define LOG_DEBUG(fmt, ...) LogPrint::getInstance()->printLog(Level_Debug, fmt, ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Info, fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Warning, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Error, fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Debug, fmt, ##__VA_ARGS__)
 
 
 } // namespace Log

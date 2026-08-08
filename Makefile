@@ -4,7 +4,7 @@
 #   make
 #
 # 交叉编译示例:
-#   make CROSS_COMPILE=aarch64-linux-gnu-
+#   make CROSS_COMPILE=aarch64-buildroot-linux-gnu-
 #
 # 输出:
 #   build/include/                 公开头文件

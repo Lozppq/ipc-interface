@@ -5,6 +5,7 @@
 #include <cstring>
 #include <vector>
 #include <string>
+#include "../log/Log_Print.h"
 #include "../define/Common.h"
 #if defined(__linux__)
 #include <semaphore.h>
@@ -308,7 +309,8 @@ int StreamShmCreator::send_impl(Header* hdr, const std::vector<uint8_t>& msg) {
         // 第一个slice记录总长度和slice信息
         if (t_msg_index == 0){
             t_len -= 4;
-            memcpy(hdr->data[old_tail].data, total_len - 4, 4);
+            uint32_t payload_len = total_len - 4;  // 即 msg.size()
+            memcpy(hdr->data[old_tail].data, &payload_len, 4);
             memcpy(hdr->data[old_tail].data + 4, msg.data(), (slot_need > 1) ? t_len : msg.size());
             hdr->data[old_tail].slice_id.store(t_slice_id, std::memory_order_release);
             hdr->data[old_tail].slice_count.store(slot_need, std::memory_order_release);
