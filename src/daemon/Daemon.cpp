@@ -15,8 +15,9 @@ int main(int argc, char* argv[]) {
     // 子进程拉起后，把 shm_name/pid 登记到 ShmManager
     IpcInterface::MulProcess::ProcessManager::getInstance()->setCreateProcessCallback(
         [](std::string shm_name, int pid) {
+            // 固定 inbox：多发送者(0) -> 子进程为接收者
             IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo(
-                {shm_name, static_cast<uint32_t>(pid)});
+                {shm_name, 0, static_cast<uint32_t>(pid)});
         });
     IpcInterface::MulProcess::ShmManager::getInstance()->start();
     IpcInterface::MulProcess::ProcessManager::getInstance()->start();
@@ -26,17 +27,15 @@ int main(int argc, char* argv[]) {
         pid_t pid = waitpid(-1, NULL, 0);
         if (pid > 0) {
             LOG_ERROR("Daemon: process exited, pid: %d", pid);
-            if (IpcInterface::MulProcess::ProcessManager::getInstance()->isNeedActivePullProcess(
-                    static_cast<uint32_t>(pid))) {
+            IpcInterface::MulProcess::ProcessManager::getInstance()->post([pid]() {
+                if (!IpcInterface::MulProcess::ProcessManager::getInstance()->isNeedActivePullProcess(static_cast<uint32_t>(pid))) {
+                    return;
+                }
                 IpcInterface::MulProcess::ShmManager::getInstance()->post([pid]() {
-                    IpcInterface::MulProcess::ShmManager::getInstance()->handleProcessCrash(
-                        static_cast<uint32_t>(pid));
-                    IpcInterface::MulProcess::ProcessManager::getInstance()->post([pid]() {
-                        IpcInterface::MulProcess::ProcessManager::getInstance()->handleProcessCrash(
-                            static_cast<uint32_t>(pid));
-                    });
+                    IpcInterface::MulProcess::ShmManager::getInstance()->handleProcessCrash(static_cast<uint32_t>(pid));
+                    IpcInterface::MulProcess::ProcessManager::getInstance()->postHandleProcessCrash(static_cast<uint32_t>(pid));
                 });
-            }
+            });
         }
     }
     return 0;

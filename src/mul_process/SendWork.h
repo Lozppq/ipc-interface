@@ -8,6 +8,7 @@
 
 #include "../model/MessageThread.h"
 #include "StreamShmCreator.h"
+#include "TagMessage.h"
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -15,10 +16,6 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-struct TagSendMessage {
-    std::vector<uint8_t> data;
-    StreamShmCreator* shm;
-};
 
 class SendWork : public Model::MessageThread {
 public:
@@ -28,8 +25,9 @@ public:
     SendWork(const SendWork&) = delete;
     SendWork& operator=(const SendWork&) = delete;
 
-    // 这里默认使用初始化的共享内存发送，如果初始化未设置共享内存则使用传入的共享内存发送,如果传入的共享内存仍为NULL则不发送
-    void send(std::vector<uint8_t> msg, StreamShmCreator* shm = NULL);
+    // 默认使用初始化的共享内存发送；若传入 shm 非空则使用传入的
+    void send(std::vector<uint8_t> msg, uint16_t message_id, StreamShmCreator* shm = NULL);
+    void send(std::shared_ptr<TagSendMessage> buf_msg);
 
 protected:
     void OnThreadInit() override;

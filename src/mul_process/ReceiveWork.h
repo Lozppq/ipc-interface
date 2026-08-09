@@ -8,21 +8,17 @@
 
 #include "../model/MessageThread.h"
 #include "StreamShmCreator.h"
+#include "TagMessage.h"
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <vector>
+#include <string>
 
 namespace IpcInterface {
 namespace MulProcess {
-struct TagReceiveMessage {
-    std::vector<uint8_t> data;
-};
 
 class ReceiveWork : public Model::MessageThread {
 public:
-    using ReceiveHandler = std::function<void(std::shared_ptr<TagReceiveMessage>)>;
-
     ReceiveWork(StreamShmCreator* shm, ReceiveHandler handler, std::string name = {});
     ~ReceiveWork();
     void setReceiveHandler(ReceiveHandler handler);
@@ -37,7 +33,6 @@ protected:
 private:
     StreamShmCreator* shm_{NULL};
     ReceiveHandler receive_handler_;
-    std::vector<uint8_t> buf_msg_;
     std::string name_;
 };
 

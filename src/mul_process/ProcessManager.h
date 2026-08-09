@@ -51,12 +51,17 @@ public:
     bool isNeedActivePullProcess(uint32_t pid);
 
     /**
+     * @brief 外部线程投递一次处理进程崩溃共享内存的重置
+     * @param pid 进程id
+    */
+    void postHandleProcessCrash(uint32_t pid);
+
+protected:
+    /**
      * @brief 处理进程崩溃共享内存的重置
      * @param pid 进程id
     */
     void handleProcessCrash(uint32_t pid);
-
-protected:
 
     /**
      * @brief 初始化创建所需的所有进程

@@ -4,12 +4,16 @@
  */
 
 #include "ReceiveWork.h"
+#include "StreamShmCreator.h"
 
 namespace IpcInterface {
 namespace MulProcess {
 
 ReceiveWork::ReceiveWork(StreamShmCreator* shm, ReceiveHandler handler, std::string name)
-    : MessageThread(1024, std::move(name)), shm_(shm), receive_handler_(handler), name_(std::move(name)) {}
+    : MessageThread(1024, std::move(name)), 
+    shm_(shm), 
+    receive_handler_(handler), 
+    name_(std::move(name)) {}
 
 ReceiveWork::~ReceiveWork() {
     receive_handler_ = NULL;
@@ -24,11 +28,11 @@ void ReceiveWork::ReceiveMessage() {
     if (!isRunning() || !shm_ || !receive_handler_) {
         return;
     }
-    uint32_t len = shm_->recv(buf_msg_);
-    if (len > 0) {
-        auto msg = std::make_shared<TagReceiveMessage>();
-        msg->data.swap(buf_msg_);
-        receive_handler_(msg);
+    std::shared_ptr<TagReceiveMessage> buf_msg_ = std::make_shared<TagReceiveMessage>();
+    if (shm_->recv(buf_msg_) > 0) {
+        receive_handler_(buf_msg_);
+    } else {
+        LOG_ERROR("ReceiveWork: ReceiveMessage failed, shm_name = %s", shm_->get_shm_name().c_str());
     }
 }
 

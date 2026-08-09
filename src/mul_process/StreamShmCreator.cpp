@@ -122,6 +122,9 @@ bool StreamShmCreator::open(bool create) {
 void StreamShmCreator::delete_shm() {
 #if defined(__linux__)
     if (is_owner_) {
+        SMALLRingQueueHeader* header = static_cast<SMALLRingQueueHeader*>(shm_ptr_);
+        header->flag.store(0, std::memory_order_release);
+        sem_post(&header->sem);
         close();
         shm_unlink(shm_name_.c_str());
     }
@@ -152,33 +155,33 @@ bool StreamShmCreator::valid() const {
 #endif
 }
 
-int StreamShmCreator::send(const std::vector<uint8_t>& msg) {
-    if (!valid() || msg.empty()) {
+int StreamShmCreator::send(std::shared_ptr<TagSendMessage> buf_msg) {
+    if (!valid() || !buf_msg || buf_msg->data.empty()) {
         return -1;
     }
     switch (slot_size_) {
         case SIZE_64B:
-            return send_impl(static_cast<SMALLRingQueueHeader*>(shm_ptr_), msg);
+            return send_impl(static_cast<SMALLRingQueueHeader*>(shm_ptr_), buf_msg);
         case SIZE_1KB:
-            return send_impl(static_cast<MEDIUMRingQueueHeader*>(shm_ptr_), msg);
+            return send_impl(static_cast<MEDIUMRingQueueHeader*>(shm_ptr_), buf_msg);
         case SIZE_256KB:
-            return send_impl(static_cast<LARGERingQueueHeader*>(shm_ptr_), msg);
+            return send_impl(static_cast<LARGERingQueueHeader*>(shm_ptr_), buf_msg);
         default:
             return -1;
     }
 }
 
-uint32_t StreamShmCreator::recv(std::vector<uint8_t>& buf) {
-    if (!valid()) {
+uint32_t StreamShmCreator::recv(std::shared_ptr<TagReceiveMessage> buf_msg) {
+    if (!valid() || !buf_msg) {
         return 0;
     }
     switch (slot_size_) {
         case SIZE_64B:
-            return recv_impl(static_cast<SMALLRingQueueHeader*>(shm_ptr_), buf);
+            return recv_impl(static_cast<SMALLRingQueueHeader*>(shm_ptr_), buf_msg);
         case SIZE_1KB:
-            return recv_impl(static_cast<MEDIUMRingQueueHeader*>(shm_ptr_), buf);
+            return recv_impl(static_cast<MEDIUMRingQueueHeader*>(shm_ptr_), buf_msg);
         case SIZE_256KB:
-            return recv_impl(static_cast<LARGERingQueueHeader*>(shm_ptr_), buf);
+            return recv_impl(static_cast<LARGERingQueueHeader*>(shm_ptr_), buf_msg);
         default:
             return 0;
     }

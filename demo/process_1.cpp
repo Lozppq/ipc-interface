@@ -4,6 +4,7 @@
  */
 #include "mul_process/ShmManager.h"
 #include "define/Common.h"
+#include "define/MessageId.h"
 #include "log/Log_Print.h"
 #include <cstdio>
 #include <cstring>
@@ -23,7 +24,8 @@ int main() {
         char text[128];
         std::snprintf(text, sizeof(text), "hello from process_1 #%d", seq++);
         std::vector<uint8_t> msg(text, text + std::strlen(text) + 1);
-        mgr->send(std::move(msg), IpcInterface::Define::Process2);
+        mgr->send(std::move(msg), IpcInterface::Define::MESSAGE_ID_PROCESS,
+                  IpcInterface::Define::Process2);
         sleep(1);
     }
     return 0;

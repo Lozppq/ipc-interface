@@ -37,8 +37,9 @@ LIB_SRCS := \
 	src/mul_process/ReceiveWork.cpp \
 	src/mul_process/SendWork.cpp \
 	src/mul_process/ProcessManager.cpp \
-	src/log/Log_Print.cpp
-
+	src/log/Log_Print.cpp \
+	src/standard/api.cpp \
+	
 LIB_OBJS := $(patsubst src/%.cpp,$(BUILD_OBJ)/%.o,$(LIB_SRCS))
 
 DAEMON_SRC := src/daemon/Daemon.cpp

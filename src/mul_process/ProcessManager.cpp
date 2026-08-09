@@ -58,7 +58,7 @@ void ProcessManager::createProcess(std::string shm_name, std::string process_exe
             if (create_process_callback_) {
                 create_process_callback_(shm_name, pid);
             }
-            LOG_INFO("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
+            LOG_DEBUG("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
         } else {
             LOG_ERROR("ProcessManager: failed, shm_name: %s, process_executable_name: %s, pid: %d", shm_name.c_str(), process_executable_name.c_str(), pid);
             postTimer(100, [this, shm_name, process_executable_name]() {
@@ -137,10 +137,16 @@ void ProcessManager::handleProcessCrash(uint32_t pid) {
 
 }
 
+void ProcessManager::postHandleProcessCrash(uint32_t pid) {
+    post([this, pid]() {
+        handleProcessCrash(pid);
+    });
+}
+
 void ProcessManager::initProcessSyncShm() {
     process_sync_shm_creator_ = std::make_shared<Model::ShmCreator<Define::ProcessSyncInfo>>(Define::ProcessSyncShmName, sizeof(Define::ProcessSyncInfo));
     if (process_sync_shm_creator_ && process_sync_shm_creator_->open(true) && process_sync_shm_creator_->get_shm_ptr()) {
-        LOG_INFO("ProcessManager: init process sync shm success, shm_name: %s", Define::ProcessSyncShmName);
+        LOG_DEBUG("ProcessManager: init process sync shm success, shm_name: %s", Define::ProcessSyncShmName);
         auto process_sync_info = process_sync_shm_creator_->get_shm_ptr();
 
         // 暂无全部按已同步处理；后续可按槽位 flags[Daemon_Fd/ProcessN_Fd] 分别置位

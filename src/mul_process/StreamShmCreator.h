@@ -3,10 +3,13 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <vector>
 #include <string>
 #include "../log/Log_Print.h"
 #include "../define/Common.h"
+#include "../standard/api.h"
+#include "TagMessage.h"
 #if defined(__linux__)
 #include <semaphore.h>
 #endif
@@ -166,17 +169,17 @@ public:
 
     /**
      * @brief 发送消息
-     * @param msg 消息数据
+     * @param buf_msg 消息数据
      * @return 成功返回0，失败返回-1
      */
-    int send(const std::vector<uint8_t>& msg);
+    int send(std::shared_ptr<TagSendMessage> buf_msg);
     
     /**
-     * @brief 接收消息，按消息实际长度调整 buf 并写入数据
-     * @param buf 接收缓冲区，内部会 resize 到消息长度
+     * @brief 接收消息，按消息实际长度调整 buf_msg 并写入数据
+     * @param buf_msg 接收缓冲区，内部会 resize 到消息长度
      * @return 接收字节数，失败返回0
      */
-    uint32_t recv(std::vector<uint8_t>& buf);
+    uint32_t recv(std::shared_ptr<TagReceiveMessage> buf_msg);
 
     /**
      * @brief 判断队列是否为空
@@ -251,9 +254,9 @@ private:
     bool create_shm(bool create);
 
     template<typename Header>
-    int send_impl(Header* hdr, const std::vector<uint8_t>& msg);
+    int send_impl(Header* hdr, std::shared_ptr<TagSendMessage> buf_msg);
     template<typename Header>
-    uint32_t recv_impl(Header* hdr, std::vector<uint8_t>& buf);
+    uint32_t recv_impl(Header* hdr, std::shared_ptr<TagReceiveMessage> buf_msg);
 
 private:
     std::string shm_name_;
@@ -269,26 +272,25 @@ private:
 };
 
 template<typename Header>
-int StreamShmCreator::send_impl(Header* hdr, const std::vector<uint8_t>& msg) {
-    if (!hdr || (hdr->flag.load(std::memory_order_acquire) & Define::BIT0) == 0) {
+int StreamShmCreator::send_impl(Header* hdr, std::shared_ptr<TagSendMessage> buf_msg) {
+    if (!hdr || !buf_msg || (hdr->flag.load(std::memory_order_acquire) & Define::BIT0) == 0) {
         return -1;
     }
 
-    // 这里把数据写入到共享内存中
+    // 线格式: [4B payload_len][2B message_id][data...]，payload_len = 2 + data.size()
     uint32_t old_tail, new_tail;
-    const uint32_t total_len = msg.size() + 4;
-    if (slot_size_ == 0 || slot_count_ == 0) {
+    const uint32_t data_size = static_cast<uint32_t>(buf_msg->data.size());
+    const uint32_t payload_len = 2u + data_size;
+    const uint32_t total_len = 4u + payload_len;
+    if (slot_size_ == 0 || slot_count_ == 0 || slot_size_ < 6) {
         return -1;
     }
-    // 向上取整，计算需要多少个数据区
     const uint32_t slot_need = (total_len + slot_size_ - 1) / slot_size_;
 
-    // CAS抢占队尾位置
     while (1) {
         old_tail = hdr->tail.load(std::memory_order_acquire);
         new_tail = (old_tail + slot_need) % slot_count_;
 
-        // 检查空间是否足够
         uint32_t h = hdr->head.load(std::memory_order_acquire);
         uint32_t available = (h - old_tail - 1 + slot_count_) % slot_count_;
         if (available >= slot_need) {
@@ -300,39 +302,45 @@ int StreamShmCreator::send_impl(Header* hdr, const std::vector<uint8_t>& msg) {
         }
     }
 
-    // 把数据写入到共享内存中，一个slot的写进去
     uint32_t t_msg_index = 0;
     uint32_t t_slice_id = 0;
-    while (t_msg_index < msg.size()) {
-        uint32_t t_len = slot_size_;
-
-        // 第一个slice记录总长度和slice信息
-        if (t_msg_index == 0){
-            t_len -= 4;
-            uint32_t payload_len = total_len - 4;  // 即 msg.size()
-            memcpy(hdr->data[old_tail].data, &payload_len, 4);
-            memcpy(hdr->data[old_tail].data + 4, msg.data(), (slot_need > 1) ? t_len : msg.size());
+    bool first_slice = true;
+    while (first_slice || t_msg_index < data_size) {
+        uint32_t copied = 0;
+        if (first_slice) {
+            first_slice = false;
+            Standard::Small_U32ToU8(payload_len, hdr->data[old_tail].data);
+            Standard::Small_U16ToU8(buf_msg->message_id, hdr->data[old_tail].data + 4);
+            uint32_t first_cap = slot_size_ - 6;
+            copied = (data_size < first_cap) ? data_size : first_cap;
+            if (copied > 0) {
+                memcpy(hdr->data[old_tail].data + 6, buf_msg->data.data(), copied);
+            }
             hdr->data[old_tail].slice_id.store(t_slice_id, std::memory_order_release);
             hdr->data[old_tail].slice_count.store(slot_need, std::memory_order_release);
         } else {
-            memcpy(hdr->data[old_tail].data, msg.data() + t_msg_index, (msg.size() - t_msg_index >= t_len) ? t_len : msg.size() - t_msg_index);
+            uint32_t remain = data_size - t_msg_index;
+            copied = (remain < slot_size_) ? remain : slot_size_;
+            memcpy(hdr->data[old_tail].data, buf_msg->data.data() + t_msg_index, copied);
         }
 
-        // 提交slice信息
         hdr->data[old_tail].commit.store(COMMIT_TRUE, std::memory_order_release);
         old_tail = (old_tail + 1) % slot_count_;
         t_slice_id += 1;
-        t_msg_index += t_len;
+        t_msg_index += copied;
+        if (copied == 0 && t_msg_index >= data_size) {
+            break;
+        }
     }
 
 #if defined(__linux__)
     sem_post(&hdr->sem);
 #endif
-    return msg.size();
+    return static_cast<int>(data_size);
 }
 
 template<typename Header>
-uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
+uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMessage> buf_msg) {
     if (!hdr || (hdr->flag.load(std::memory_order_acquire) & Define::BIT1) == 0) {
         return 0;
     }
@@ -361,20 +369,37 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
                 hdr->data[head].slice_id.store(0, std::memory_order_release);
                 hdr->data[head].slice_count.store(0, std::memory_order_release);
                 // 预设buf的总大小为第一个slice的data前四个字节组成的无符号数大小
-                uint32_t total_len = 0;
-                memcpy(&total_len, hdr->data[head].data, 4);
+                uint32_t total_len = Standard::Small_U8ToU32(hdr->data[head].data);
                 if (total_len == 0) {
                     hdr->head.store(head + 1, std::memory_order_release);
                     hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
                     slice_count = 0;
                     continue;
                 }
-                buf.resize(total_len);
-                memcpy(buf.data(), hdr->data[head].data + 4, slot_size_ - 4);
-                t_msg_index += slot_size_ - 4;
+                if (total_len < 2 || slot_size_ < 6) {
+                    hdr->head.store(head + 1, std::memory_order_release);
+                    hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
+                    slice_count = 0;
+                    continue;
+                }
+                const uint32_t payload_total = total_len - 2;
+                buf_msg->data.resize(payload_total);
+                buf_msg->message_id = Standard::Small_U8ToU16(hdr->data[head].data + 4);
+                uint32_t first_copy = payload_total;
+                if (first_copy > slot_size_ - 6) {
+                    first_copy = slot_size_ - 6;
+                }
+                if (first_copy > 0) {
+                    memcpy(buf_msg->data.data(), hdr->data[head].data + 6, first_copy);
+                }
+                t_msg_index = first_copy;
             } else {
-                memcpy(buf.data() + t_msg_index, hdr->data[head].data, slot_size_);
-                t_msg_index += slot_size_;
+                uint32_t remain = static_cast<uint32_t>(buf_msg->data.size()) - t_msg_index;
+                uint32_t copy_len = (remain < slot_size_) ? remain : slot_size_;
+                if (copy_len > 0) {
+                    memcpy(buf_msg->data.data() + t_msg_index, hdr->data[head].data, copy_len);
+                }
+                t_msg_index += copy_len;
             }
             hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
             if (slice_count == hdr->data[head].slice_id.load(std::memory_order_acquire)) {
@@ -405,7 +430,7 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::vector<uint8_t>& buf) {
                 start_time = get_timestamp();
             } else if (get_timestamp() - start_time > slot_timeout_){ // 进入这里说明找到了一直未提交的tail，进入超时处理
                 LOG_ERROR("StreamShmCreator::recv_impl timeout,name=%s,head=%d,not_commit_head=%d", shm_name_.c_str(), head, not_commit_head);
-                buf.clear();
+                buf_msg->data.clear();
                 t_msg_index = 0;
                 head = not_commit_head;
                 break;

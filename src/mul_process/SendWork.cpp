@@ -4,6 +4,7 @@
  */
 
 #include "SendWork.h"
+#include "StreamShmCreator.h"
 
 namespace IpcInterface {
 namespace MulProcess {
@@ -15,15 +16,25 @@ SendWork::~SendWork() {
     shm_ = NULL;
 }
 
-void SendWork::send(std::vector<uint8_t> msg, StreamShmCreator* shm) {
+void SendWork::send(std::vector<uint8_t> msg, uint16_t message_id, StreamShmCreator* shm) {
     if (msg.empty()) {
         return;
     }
     auto tag = std::make_shared<TagSendMessage>();
     tag->data = std::move(msg);
+    tag->message_id = message_id;
     tag->shm = shm == NULL ? shm_ : shm;
     post([this, tag = std::move(tag)]() {
         SendMessage(tag);
+    });
+}
+
+void SendWork::send(std::shared_ptr<TagSendMessage> buf_msg) {
+    if (!buf_msg || buf_msg->data.empty() || !buf_msg->shm) {
+        return;
+    }
+    post([this, buf_msg = std::move(buf_msg)]() {
+        SendMessage(buf_msg);
     });
 }
 
@@ -31,7 +42,7 @@ void SendWork::SendMessage(std::shared_ptr<TagSendMessage> tag) {
     if (!isRunning() || !tag || tag->data.empty() || !tag->shm) {
         return;
     }
-    tag->shm->send(tag->data);
+    tag->shm->send(tag);
 }
 
 void SendWork::OnThreadInit() {

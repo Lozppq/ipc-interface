@@ -23,10 +23,11 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-// 存储名称和pid，这个是初始化进程id与消息接口名称的映射，用于初始化各个共享内存
+// 共享内存名称与收发进程 OS pid 映射；sender_pid==0 表示多个发送者
 typedef struct {
-    std::string shm_name;  // 共享内存名称
-    uint32_t pid;  // 进程id
+    std::string shm_name;      // 共享内存名称
+    uint32_t sender_pid;       // 发送者 pid，0 表示多个发送者
+    uint32_t receiver_pid;     // 接收者 pid
 } PidNameInfo;
 
 class ShmManager : public Model::MessageThread {
@@ -60,13 +61,23 @@ public:
     /**
      * @brief 发送消息
      * @param msg 消息数据
+     * @param message_id 消息id
+     * @param shm_name 共享内存名称，如果为空则使用本进程的消息接口名称
      */
-    void send(std::vector<uint8_t> msg, std::string shm_name);
+    void send(std::vector<uint8_t> msg, uint16_t message_id, std::string shm_name);
 
     /**
-     * @brief 接收线程消息回调
+     * @brief 发送消息
+     * @param buf_msg 消息数据
+     * @param message_id 消息id
+     * @param shm_name 共享内存名称，如果为空则使用本进程的消息接口名称
+     */
+    void send(std::shared_ptr<TagSendMessage> buf_msg, std::string shm_name);
+
+    /**
+     * @brief 设置接收消息回调函数
     */
-    void onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag);
+    void setReceiveHandler(ReceiveHandler handler);
 
     /**
      * @brief 添加初始化进程id与消息接口名称映射
@@ -86,17 +97,95 @@ public:
     void handleProcessCrash(uint32_t pid);
 
     /**
+     * @brief 外部线程投递一次请求申请分配共享内存
+    */
+    void postRequestAllocateShm(std::string sender_shm_name, std::string receiver_shm_name, uint32_t slot_size, uint32_t slot_count, std::string new_shm_name);
+
+    /**
+     * @brief 外部线程投递一次请求释放共享内存
+    */
+    void postRequestReleaseShm(std::string shm_name);
+
+    /**
+     * @brief 外部线程投递一次根据共享内存名称创建接收消息线程
+    */
+    void postCreateReceiveWork(std::string shm_name, ReceiveHandler receive_handler);
+
+    /**
+     * @brief 外部线程投递一次根据共享内存名称创建发送消息线程
+    */
+    void postCreateSendWork(std::string shm_name);
+
+private:
+    /**
      * @brief 根据共享内存名称匹配逻辑进程ID
      * @param shm_name 共享内存名称
      * @return 逻辑进程ID，无效返回INVALID_FD
     */
     uint8_t getLogicProcessId(const std::string& shm_name);
+
+    /**
+     * @brief 根据进程ID匹配共享内存名称
+     * @param pid 进程id
+     * @return 共享内存名称，无效返回空字符串
+    */
+    std::string lookupShmNameByPid(uint32_t pid);
+
+
+    /**
+     * @brief 按逻辑进程槽位查找已登记的接收者 OS pid
+     * @param logic_id 逻辑进程槽位
+     * @return 接收者 OS pid，无效返回0
+     */
+    uint32_t lookupReceiverPidByLogicId(uint8_t logic_id) const;
+
+    /**
+     * @brief 通过逻辑进程pid寻找已登记的共享内存名称
+     * @param logic_id 逻辑进程槽位
+     * @return 共享内存名称，无效返回空字符串
+     */
+    std::string lookupShmNameByLogicId(uint8_t logic_id) const;
     
+    /**
+     * @brief 请求申请分配共享内存
+     * @param sender_shm_name 发送者共享内存名称
+     * @param receiver_shm_name 接收者共享内存名称
+     * @param slot_size 单槽位大小
+     * @param slot_count 槽位数量
+     * @param new_shm_name 申请的共享内存名称
+     * @return 是否成功申请共享内存
+    */
+    bool RequestAllocateShm(std::string sender_shm_name, std::string receiver_shm_name, uint32_t slot_size, uint32_t slot_count, std::string new_shm_name);
+
+    /**
+     * @brief 请求释放共享内存
+     * @param shm_name 共享内存名称
+     * @return 是否成功释放共享内存
+    */
+    bool RequestReleaseShm(std::string shm_name);
+
+    /**
+     * @brief 根据共享内存名称创建接收消息线程
+     * @param shm_name 共享内存名称
+     * @param receive_handler 接收消息回调函数
+    */
+    void createReceiveWork(std::string shm_name, ReceiveHandler receive_handler);
+    
+    /**
+     * @brief 根据共享内存名称创建发送消息线程
+     * @param shm_name 共享内存名称
+    */
+    void createSendWork(std::string shm_name);
 
 protected:
     void OnThreadInit() override;
 
 private:
+    /**
+     * @brief 接收线程消息回调
+    */
+    void onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag);
+
     /**
      * @brief 初始化各个共享内存
      * @param create 是否创建共享内存
@@ -115,7 +204,21 @@ private:
 
     void openStreamShmRetry(PidNameInfo info, bool create);
 
+    /**
+     * @brief 处理守护进程消息
+     * @param tag 消息数据
+    */
+    void handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag);
+
+    /**
+     * @brief 处理业务进程消息
+     * @param tag 消息数据
+    */
+    void handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag);
+
     std::map<std::string, std::unique_ptr<StreamShmCreator>> shmInfosMap_;
+    std::map<std::string, std::unique_ptr<ReceiveWork>> receiveWorkMap_;
+    std::map<std::string, std::unique_ptr<SendWork>> sendWorkMap_;
 
     std::string shm_name_;  // 本进程的消息接口名称
     // 接收消息线程对象
@@ -124,6 +227,7 @@ private:
     SendWork* send_work_{NULL};
     // 初始化进程id与消息接口名称映射
     std::vector<PidNameInfo> pidNameInfos_;
+    ReceiveHandler receive_handler_{NULL};
 };
 
 } // namespace MulProcess
