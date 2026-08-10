@@ -37,18 +37,22 @@ void ReceiveWork::ReceiveMessage() {
     if (!isRunning() || !shm_ || !receive_handler_) {
         return;
     }
-    std::shared_ptr<TagReceiveMessage> buf_msg_ = std::make_shared<TagReceiveMessage>();
-    if (shm_->recv(buf_msg_) > 0) {
-        receive_handler_(buf_msg_);
-    } else if (isRunning()) {
-        LOG_ERROR("ReceiveWork: ReceiveMessage failed, shm_name = %s", shm_->get_shm_name().c_str());
+    auto buf_msg = std::make_shared<TagReceiveMessage>();
+    uint32_t n = shm_->recv(buf_msg);
+    if (!isRunning()) {
+        return;
     }
+    if (n > 0) {
+        receive_handler_(buf_msg);
+        post([this]() { ReceiveMessage(); });
+        return;
+    }
+    // shm 未就绪 / BIT1 关闭 / 超时丢弃：退避再试，禁止 0 周期空转刷屏
+    postTimer(1000, [this]() { ReceiveMessage(); });
 }
 
 void ReceiveWork::OnThreadInit() {
-    startTimer(0, [this]() {
-        ReceiveMessage();
-    });
+    post([this]() { ReceiveMessage(); });
 }
 
 } // namespace MulProcess

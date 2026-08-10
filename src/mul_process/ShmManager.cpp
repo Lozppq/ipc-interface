@@ -64,9 +64,9 @@ ShmManager* ShmManager::getInstance() {
 }
 
 void ShmManager::addPidNameInfo(PidNameInfo info){
-    // 如果在当前线程直接添加，否则需要post等待下一次找到在添加进去
-    if (isInWorkerThread()) {
-        pidNameInfos_.push_back(info);
+    // start 前 / 工作线程内直接写；运行中从外部线程则 post
+    if (isInWorkerThread() || !isRunning()) {
+        pidNameInfos_.push_back(std::move(info));
     } else {
         post([this, info = std::move(info)]() {
             pidNameInfos_.push_back(info);

@@ -96,7 +96,109 @@ int main() {
 
 - `initParams(本进程队列名)`：非 daemon 会登记所有 `kShmNames`，便于打开发送目标队列
 - `send(msg, message_id, 目标 shm 名)`：写入对端的接收环；业务互通用 `MESSAGE_ID_PROCESS`
-- `setReceiveHandler`：注册 `MESSAGE_ID_PROCESS` 回调；daemon 协议走内部 `onReceiveMessage`
+- `setReceiveHandler`：注册**本进程固定 inbox**上 `MESSAGE_ID_PROCESS` 的回调；daemon 协议走内部 `onReceiveMessage`
+
+### 动态申请 / 释放共享内存
+
+固定通道（`/ipc_daemon`、`/ipc_process_1`…）由 daemon 启动时创建。业务之间若需要**额外**环形队列，向 daemon 申请动态 SHM。
+
+#### 流程概览
+
+```text
+业务进程                         Daemon
+   |  postRequestAllocateShm(...)    |
+   |------ MESSAGE_ID_DAEMON ------->|
+   |  (ALLOCATE 子消息)               | 创建 POSIX shm，登记 PidNameInfo
+   |<----- 同一 ALLOCATE 回包 --------|  回给 sender / receiver 双方
+   |  自动 open(false) 挂接           |
+   |  接收端再 postCreateReceiveWork  |
+   |  之后 send(..., new_shm_name)    |
+```
+
+`postRequestAllocateShm` / `RequestAllocateShm` 返回 `true` 只表示**请求已投递到 daemon**，不表示环已建好。挂接在收到 daemon 回包后由内部 `handleProcessMessage` 完成。
+
+#### 申请（推荐跨线程用 post 接口）
+
+```cpp
+#include "mul_process/ShmManager.h"
+#include "mul_process/StreamShmCreator.h"  // SIZE_64B / SIZE_1KB / SIZE_256KB
+#include "define/Common.h"
+
+auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
+
+// 参数含义：
+//   sender_shm_name   — 发送侧进程的固定 inbox 名（如 Define::Process1）
+//   receiver_shm_name — 接收侧进程的固定 inbox 名（如 Define::Process2）
+//   slot_size         — 单槽字节数，必须是 SIZE_64B / SIZE_1KB / SIZE_256KB 之一
+//   slot_count        — 槽个数（如 1024）
+//   new_shm_name      — 新通道名，必须以 '/' 开头，且不在 kShmNames 固定表中
+//                       （如 "/ipc_dyn_p1_to_p2"）
+mgr->postRequestAllocateShm(
+    IpcInterface::Define::Process1,
+    IpcInterface::Define::Process2,
+    IpcInterface::MulProcess::SIZE_64B,
+    1024,
+    "/ipc_dyn_p1_to_p2");
+```
+
+若已在 `ShmManager` 工作线程内，也可直接调私有路径对应的投递；对外请用 **`postRequestAllocateShm`**（任意线程安全投递）。
+
+注意：
+
+- `new_shm_name` 长度需能放进协议里的 `u8` 长度字段（建议短名）。
+- 同名已存在时，本进程 `RequestAllocateShm` 会失败返回；daemon 侧对重复申请会**幂等回包**，不重复创建。
+- 发送方逻辑 id / 接收方逻辑 id 由 `sender_shm_name`、`receiver_shm_name` 在本地表里解析，须是已 `initParams` 登记过的固定进程名。
+
+#### 挂接成功后：收发
+
+双方在收到 ALLOCATE 回包后会 `open(false)` 并把通道放进 `shmInfosMap_`。
+
+**发送**（通道名用动态名，不是固定 Process2 inbox）：
+
+```cpp
+std::vector<uint8_t> msg = {/* ... */};
+mgr->send(std::move(msg),
+          IpcInterface::Define::MESSAGE_ID_PROCESS,
+          "/ipc_dyn_p1_to_p2");
+```
+
+默认 `SendWork` 即可发送；若要为该通道单独发送线程：
+
+```cpp
+mgr->postCreateSendWork("/ipc_dyn_p1_to_p2");
+```
+
+**接收**（动态通道**不会**走 `setReceiveHandler` 那个固定 inbox；接收端必须另建 ReceiveWork）：
+
+```cpp
+mgr->postCreateReceiveWork(
+    "/ipc_dyn_p1_to_p2",
+    [](std::shared_ptr<IpcInterface::MulProcess::TagReceiveMessage> tag) {
+        if (!tag) return;
+        // 处理该动态通道上的业务消息
+    });
+```
+
+一般由**接收侧进程**在认为通道将就绪后调用；若 open 尚未成功，内部会定时重试创建 ReceiveWork。
+
+#### 释放
+
+```cpp
+mgr->postRequestReleaseShm("/ipc_dyn_p1_to_p2");
+```
+
+流程：向 daemon 发 RELEASE → daemon `unlink` 并通知相关进程 → 各进程停该通道的 Send/ReceiveWork 并 `close`。  
+崩溃时：固定通道只清 flag、保留环数据；**动态通道**会走 RELEASE/`unlink`，进程起来后需业务再次 `postRequestAllocateShm`。
+
+#### 与固定通道对比
+
+| | 固定通道 | 动态通道 |
+|--|----------|----------|
+| 创建 | daemon 启动创建 | 业务 `postRequestAllocateShm` |
+| 名称 | `kShmNames[]` | 自定义 `/...`，勿与固定名冲突 |
+| 收消息 | `setReceiveHandler` | `postCreateReceiveWork` |
+| 发消息 | `send(..., ProcessN)` | `send(..., new_shm_name)` |
+| 释放 | 一般不释放 | `postRequestReleaseShm` |
 
 ### 增加新业务进程
 

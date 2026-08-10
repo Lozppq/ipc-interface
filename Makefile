@@ -51,7 +51,9 @@ INL_FILES := $(shell find src -name '*.inl' 2>/dev/null)
 DEMO_SRCS := $(wildcard demo/*.cpp)
 DEMO_BINS := $(patsubst demo/%.cpp,$(BUILD_BIN)/%,$(DEMO_SRCS))
 
-APP_CXXFLAGS := -std=c++14 -Wall -O2 -I$(BUILD_INC) -Isrc
+# demo/daemon 链接与 demo 编译只走公开头目录，避免 -Isrc 与 -Ibuild/include
+# 同时命中同一份头文件的两份拷贝（#pragma once 按路径失效导致重定义）
+APP_CXXFLAGS := -std=c++14 -Wall -O2 -I$(BUILD_INC)
 APP_LDFLAGS  := -L$(BUILD_LIB) -l$(LIB_NAME) -Wl,-rpath,'$$ORIGIN/../lib' $(LDLIBS)
 
 .PHONY: all clean lib daemon demos install-headers
@@ -76,17 +78,17 @@ install-headers: | $(BUILD_INC)
 		cp -f $$f $(BUILD_INC)/$$dir/; \
 	done
 
-$(LIB_SO): $(LIB_OBJS) | $(BUILD_LIB)
+$(LIB_SO): $(LIB_OBJS) | $(BUILD_LIB) install-headers
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-$(DAEMON): $(DAEMON_OBJ) $(LIB_SO) | $(BUILD_BIN)
+$(DAEMON): $(DAEMON_OBJ) $(LIB_SO) | $(BUILD_BIN) install-headers
 	$(CXX) $(APP_CXXFLAGS) -o $@ $(DAEMON_OBJ) $(APP_LDFLAGS)
 
 $(BUILD_OBJ)/%.o: src/%.cpp | $(BUILD_OBJ)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(BUILD_BIN)/%: demo/%.cpp $(LIB_SO) | $(BUILD_BIN)
+$(BUILD_BIN)/%: demo/%.cpp $(LIB_SO) | $(BUILD_BIN) install-headers
 	$(CXX) $(APP_CXXFLAGS) -o $@ $< $(APP_LDFLAGS)
 
 $(BUILD_INC) $(BUILD_LIB) $(BUILD_BIN):
