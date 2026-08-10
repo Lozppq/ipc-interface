@@ -91,26 +91,30 @@ bool StreamShmCreator::create_shm(bool create) {
 
 bool StreamShmCreator::open(bool create) {
 #if defined(__linux__)
-    is_owner_ = create;
+    is_owner_ = false;
     if (create) {
         shm_fd_ = shm_open(shm_name_.c_str(), O_CREAT | O_RDWR | O_EXCL, 0666);
         if (shm_fd_ >= 0) {
-            return create_shm(true);
-        } else {
-            shm_fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0666);
-            if (shm_fd_ >= 0) {
-                return create_shm(false);
-            } else {
-                LOG_ERROR("StreamShmCreator: open failed, shm_fd_ = %d", shm_fd_);
+            is_owner_ = true;
+            if (create_shm(true)) {
+                return true;
             }
+            close();
+            shm_unlink(shm_name_.c_str());
+            is_owner_ = false;
+            return false;
         }
+        shm_fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0666);
+        if (shm_fd_ >= 0) {
+            return create_shm(false);
+        }
+        LOG_ERROR("StreamShmCreator: open failed, shm_fd_ = %d", shm_fd_);
     } else {
         shm_fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0666);
         if (shm_fd_ >= 0) {
             return create_shm(false);
-        } else {
-            LOG_ERROR("StreamShmCreator: open failed, shm_fd_ = %d", shm_fd_);
         }
+        LOG_ERROR("StreamShmCreator: open failed, shm_fd_ = %d", shm_fd_);
     }
     return false;
 #else
@@ -212,6 +216,17 @@ void StreamShmCreator::set_flag(uint32_t flag) {
         return;
     }
     static_cast<SMALLRingQueueHeader*>(shm_ptr_)->flag.store(flag, std::memory_order_release);
+}
+
+void StreamShmCreator::wakeup_recv() {
+#if defined(__linux__)
+    if (!valid()) {
+        return;
+    }
+    auto* hdr = static_cast<SMALLRingQueueHeader*>(shm_ptr_);
+    hdr->flag.fetch_and(~static_cast<uint32_t>(Define::BIT1), std::memory_order_release);
+    sem_post(&hdr->sem);
+#endif
 }
 
 uint32_t StreamShmCreator::get_receiver_pid() const {

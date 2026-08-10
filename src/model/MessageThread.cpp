@@ -7,6 +7,7 @@
  */
 
 #include "MessageThread.h"
+#include "../log/Log_Print.h"
 #if defined(__linux__)
 #include <sys/eventfd.h>
 #include <poll.h>
@@ -69,6 +70,8 @@ void MessageThread::post(std::function<void()> task) {
 #if defined(__linux__)
         wake(efd_);
 #endif
+    } else {
+        LOG_ERROR("MessageThread::post queue full, drop task");
     }
 }
 
@@ -88,7 +91,7 @@ uint32_t MessageThread::postTimer(int delay_ms, std::function<void()> callback) 
 #endif
     } else {
 #if defined(__linux__)
-        queue_.push([this, timer_id, delay, cb = std::move(callback)]() {
+        if (!queue_.push([this, timer_id, delay, cb = std::move(callback)]() {
             timers_.insert({
                 timer_id,
                 std::chrono::steady_clock::now() + delay,
@@ -96,10 +99,13 @@ uint32_t MessageThread::postTimer(int delay_ms, std::function<void()> callback) 
                 std::move(cb),
                 false
             });
-        });
-        wake(efd_);
+        })) {
+            LOG_ERROR("MessageThread::postTimer queue full, drop timer id=%u", timer_id);
+        } else {
+            wake(efd_);
+        }
 #else
-        queue_.push([this, timer_id, delay, cb = std::move(callback)]() {
+        if (!queue_.push([this, timer_id, delay, cb = std::move(callback)]() {
             timers_.insert({
                 timer_id,
                 std::chrono::steady_clock::now() + delay,
@@ -107,7 +113,9 @@ uint32_t MessageThread::postTimer(int delay_ms, std::function<void()> callback) 
                 std::move(cb),
                 false
             });
-        });
+        })) {
+            LOG_ERROR("MessageThread::postTimer queue full, drop timer id=%u", timer_id);
+        }
 #endif
     }
     return timer_id;
@@ -128,7 +136,7 @@ uint32_t MessageThread::startTimer(int interval_ms, std::function<void()> callba
         wake(efd_);
 #endif
     } else {
-        queue_.push([this, timer_id, interval, cb = std::move(callback)]() {
+        if (!queue_.push([this, timer_id, interval, cb = std::move(callback)]() {
             timers_.insert({
                 timer_id,
                 std::chrono::steady_clock::now() + interval,
@@ -136,9 +144,13 @@ uint32_t MessageThread::startTimer(int interval_ms, std::function<void()> callba
                 std::move(cb),
                 true
             });
-        });
+        })) {
+            LOG_ERROR("MessageThread::startTimer queue full, drop timer id=%u", timer_id);
+        }
 #if defined(__linux__)
-        wake(efd_);
+        else {
+            wake(efd_);
+        }
 #endif
     }
     return timer_id;
@@ -156,9 +168,13 @@ void MessageThread::stopTimer(uint32_t timer_id) {
     if (isInWorkerThread()) {
         do_stop();
     } else {
-        queue_.push(std::move(do_stop));
+        if (!queue_.push(std::move(do_stop))) {
+            LOG_ERROR("MessageThread::stopTimer queue full, drop stop id=%u", timer_id);
+        }
 #if defined(__linux__)
-        wake(efd_);
+        else {
+            wake(efd_);
+        }
 #endif
     }
 }
@@ -190,7 +206,7 @@ void MessageThread::Run() {
                 Timer timer = *timers_.begin();
                 timers_.erase(timers_.begin());
                 timer.callback();
-                if (timer.periodic) {
+                if (timer.periodic && isRunning()) {
                     timer.expiry = now + timer.interval;
                     timers_.insert(std::move(timer));
                 }

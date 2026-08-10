@@ -41,7 +41,7 @@ public:
      * @brief 获取是否允许创建进程
      * @return 是否允许创建进程
      */
-    bool isAllowCreateProcess(std::string shm_name);
+    bool isAllowCreateProcess(const std::string& shm_name);
 
     /**
      * @brief 判断是否是需要主动拉起的进程

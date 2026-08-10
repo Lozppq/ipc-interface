@@ -7,9 +7,6 @@
 #include "ProcessManager.h"
 #include "../log/Log_Print.h"
 #include <algorithm>
-#include <atomic>
-#include <cstdio>
-#include <cstdlib>
 #if defined(__linux__)
 #include <unistd.h>
 #endif
@@ -61,19 +58,19 @@ void ProcessManager::createProcess(std::string shm_name, std::string process_exe
             LOG_DEBUG("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
         } else {
             LOG_ERROR("ProcessManager: failed, shm_name: %s, process_executable_name: %s, pid: %d", shm_name.c_str(), process_executable_name.c_str(), pid);
-            postTimer(100, [this, shm_name, process_executable_name]() {
-                createProcess(shm_name, process_executable_name);
+            postTimer(100, [this, shm_name = std::move(shm_name), process_executable_name = std::move(process_executable_name)]() {
+                createProcess(std::move(shm_name), std::move(process_executable_name));
             });
         }
     } else {
         LOG_DEBUG("ProcessManager: not allow create process, shm_name: %s", shm_name.c_str());
-        postTimer(100, [this, shm_name, process_executable_name]() {
-            createProcess(shm_name, process_executable_name);
+        postTimer(100, [this, shm_name = std::move(shm_name), process_executable_name = std::move(process_executable_name)]() {
+            createProcess(std::move(shm_name), std::move(process_executable_name));
         });
     }
 }
 
-bool ProcessManager::isAllowCreateProcess(std::string shm_name) {
+bool ProcessManager::isAllowCreateProcess(const std::string& shm_name) {
     if (!process_sync_shm_creator_ || !process_sync_shm_creator_->get_shm_ptr()) {
         return false;
     }
@@ -150,6 +147,7 @@ void ProcessManager::initProcessSyncShm() {
         auto process_sync_info = process_sync_shm_creator_->get_shm_ptr();
 
         // 暂无全部按已同步处理；后续可按槽位 flags[Daemon_Fd/ProcessN_Fd] 分别置位
+        // bootstrap 占位：上述循环非真实 per-slot 握手，仅为启动阶段允许 createProcess
         for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
             process_sync_info->flags[i].store(Define::PROCESS_SYNC_FLAG_DONE, std::memory_order_release);
         }

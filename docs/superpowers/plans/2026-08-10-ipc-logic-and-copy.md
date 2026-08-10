@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Finish Important logic fixes (stop/wakeup, send retry, protocol, owner, crash semantics, createProcess cap, demo), then reduce unnecessary parameter copies.
+**Goal:** Finish Important logic fixes (stop/wakeup, send retry, protocol, owner, crash semantics, infinite createProcess retry, demo), then reduce unnecessary parameter copies.
 
 **Architecture:** Two phases. Phase 1 keeps fixed SHM rings across crash (flag only) and unlinks dynamic SHM via existing RELEASE path; send failures re-`post` up to 5 times on the same `SendWork` thread. Phase 2 only changes signatures/`std::move` — no API redesign.
 
@@ -283,15 +283,15 @@ git commit -m "fix: validate SHM protocol lengths; idempotent ALLOCATE reply"
 
 ---
 
-### Task 5: Crash path comments + createProcess retry cap + sync placeholder
+### Task 5: Crash path comments + infinite createProcess retry + sync placeholder
 
 **Files:**
 - Modify: `src/mul_process/ShmManager.cpp` (`handleProcessCrash`)
 - Modify: `src/mul_process/ProcessManager.cpp` (`createProcess`, `initProcessSyncShm`)
-- Modify: `src/mul_process/ProcessManager.h` or `Common.h` for `kCreateProcessMaxRetry`
+- Modify: `src/mul_process/ProcessManager.h`
 
 **Interfaces:**
-- Produces: `#define kCreateProcessMaxRetry 50` (prefer `ProcessManager.cpp` anonymous or `Common.h`)
+- Produces: `createProcess` keeps retrying every 100ms with no max count
 - Fixed channel: flag clear only (behavior unchanged)
 - Dynamic channel: existing RELEASE path (behavior unchanged)
 
@@ -300,28 +300,17 @@ git commit -m "fix: validate SHM protocol lengths; idempotent ALLOCATE reply"
 Above fixed-channel `set_flag(0)`: comment that ring data is intentionally kept for resume after relaunch.  
 Above dynamic RELEASE path: comment that dynamic SHM is unlinked and peers notified; business must re-`RequestAllocateShm` after restart.
 
-- [ ] **Step 2: Cap `createProcess` retries**
+- [ ] **Step 2: Keep infinite `createProcess` retries**
 
-Add member or static atomic/counter per call chain via defaulted parameter:
-
-```cpp
-void ProcessManager::createProcess(std::string shm_name, std::string process_executable_name, int retry_n = 0);
-```
-
-On failure / not-allow:
+On failure / not-allow, always:
 
 ```cpp
-if (retry_n >= kCreateProcessMaxRetry) {
-    LOG_ERROR("ProcessManager: give up create after %d retries, shm=%s exe=%s",
-              retry_n, shm_name.c_str(), process_executable_name.c_str());
-    return;
-}
-postTimer(100, [this, shm_name, process_executable_name, retry_n]() {
-    createProcess(shm_name, process_executable_name, retry_n + 1);
+postTimer(100, [this, shm_name = std::move(shm_name), process_executable_name = std::move(process_executable_name)]() {
+    createProcess(std::move(shm_name), std::move(process_executable_name));
 });
 ```
 
-Update header declaration to match (default arg only on declaration).
+Do **not** add a max-retry give-up path.
 
 - [ ] **Step 3: Sync SHM comment**
 
@@ -438,7 +427,7 @@ git commit -m "refactor: reduce string/shared_ptr copies on hot paths"
 | is_owner_ / recv bad len head | Task 3 |
 | Protocol length + idempotent ALLOCATE | Task 4 |
 | Crash fixed vs dynamic semantics | Task 5 (comments; behavior already branched) |
-| createProcess retry cap + sync placeholder | Task 5 |
+| createProcess infinite retry + sync placeholder | Task 5 |
 | Demo handler + README | Task 6 |
 | Phase 2 copy rules B | Task 7 |
 | No real multi-slot sync / no persistence | Global Constraints |

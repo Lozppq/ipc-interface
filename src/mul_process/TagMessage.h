@@ -15,10 +15,15 @@ namespace MulProcess {
 
 class StreamShmCreator;
 
+#ifndef kSendMaxRetry
+#define kSendMaxRetry 5
+#endif
+
 struct TagSendMessage {
     std::vector<uint8_t> data;
     uint16_t message_id{0};
     StreamShmCreator* shm{NULL};
+    uint32_t retry_count{0};
 };
 
 struct TagReceiveMessage {

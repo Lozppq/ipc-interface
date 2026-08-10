@@ -7,7 +7,7 @@
  */
 
 #include "ShmManager.h"
-#include "../define/common.h"
+#include "../define/Common.h"
 #include "../define/MessageId.h"
 #include "../log/Log_Print.h"
 #include "StreamShmCreator.h"
@@ -68,14 +68,14 @@ void ShmManager::addPidNameInfo(PidNameInfo info){
     if (isInWorkerThread()) {
         pidNameInfos_.push_back(info);
     } else {
-        post([this, info]() {
+        post([this, info = std::move(info)]() {
             pidNameInfos_.push_back(info);
         });
     }
 }
 
 void ShmManager::postCreatePidNameInfo(PidNameInfo info) {
-    post([this, info]() {
+    post([this, info = std::move(info)]() {
         auto it = std::find_if(pidNameInfos_.begin(), pidNameInfos_.end(),
             [&info](const PidNameInfo& item) {
                 return item.shm_name == info.shm_name;
@@ -140,8 +140,8 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
         LOG_ERROR("ShmManager: openStreamShmRetry failed, name=%s, sender_pid=%u, receiver_pid=%u",
             info.shm_name.c_str(), info.sender_pid, info.receiver_pid);
         shm.close();
-        postTimer(100, [this, info, create]() {
-            openStreamShmRetry(info, create);
+        postTimer(100, [this, info = std::move(info), create]() {
+            openStreamShmRetry(std::move(info), create);
         });
     }
 }
@@ -238,16 +238,28 @@ void ShmManager::onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag) {
 }
 
 void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
+    if (tag->data.size() < 2) {
+        LOG_ERROR("ShmManager: daemon message truncated, size=%zu", tag->data.size());
+        return;
+    }
     uint16_t sub_message_id = Standard::Small_U8ToU16(tag->data.data());
     switch (sub_message_id) {
         case Define::MESSAGE_SUB_ID_ALLOCATE_SHM:
         {
+            if (!tag || tag->data.size() < 13) {
+                LOG_ERROR("ShmManager: ALLOCATE_SHM truncated, size=%zu", tag ? tag->data.size() : 0);
+                break;
+            }
+            uint8_t shm_name_len = tag->data[12];
+            if (tag->data.size() < 13u + shm_name_len) {
+                LOG_ERROR("ShmManager: ALLOCATE_SHM name truncated");
+                break;
+            }
             // 解析数据部分，从第3个字节开始
             uint8_t sender_logic = tag->data[2];
             uint8_t receiver_logic = tag->data[3];
             uint32_t slot_size = Standard::Small_U8ToU32(tag->data.data() + 4);
             uint32_t slot_count = Standard::Small_U8ToU32(tag->data.data() + 8);
-            uint8_t shm_name_len = tag->data[12];
             const std::string shm_name = std::string(reinterpret_cast<const char*>(tag->data.data() + 13), static_cast<size_t>(shm_name_len));
 
             // 协议里是逻辑进程槽位；映射到已登记的 OS pid，sender 暂按多发送者(0)
@@ -256,11 +268,14 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
             std::string receiver_shm_name = lookupShmNameByLogicId(receiver_logic);
             std::string sender_shm_name = lookupShmNameByLogicId(sender_logic);
             PidNameInfo info{shm_name, os_sender, os_receiver};
-            if (std::find_if(pidNameInfos_.begin(), pidNameInfos_.end(),[&info](const PidNameInfo& item) { return item.shm_name == info.shm_name; }) == pidNameInfos_.end()) {
-                pidNameInfos_.push_back(info);
-            } else {
-                return;
+            if (std::find_if(pidNameInfos_.begin(), pidNameInfos_.end(),[&info](const PidNameInfo& item) { return item.shm_name == info.shm_name; }) != pidNameInfos_.end()) {
+                send(tag->data, Define::MESSAGE_ID_DAEMON, receiver_shm_name);
+                send(tag->data, Define::MESSAGE_ID_DAEMON, sender_shm_name);
+                LOG_DEBUG("ShmManager: handleDaemonMessage AllocateShm idempotent, shm_name = %s, receiver_shm_name = %s, sender_shm_name = %s",
+                    shm_name.c_str(), receiver_shm_name.c_str(), sender_shm_name.c_str());
+                break;
             }
+            pidNameInfos_.push_back(info);
             shmInfosMap_.emplace(shm_name, std::make_unique<StreamShmCreator>(shm_name, slot_size, slot_count));
             openStreamShmRetry(info, true);
 
@@ -273,8 +288,16 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
             break;
         case Define::MESSAGE_SUB_ID_RELEASE_SHM:
         {
-            // 解析数据部分，从第3个字节开始
+            if (!tag || tag->data.size() < 3) {
+                LOG_ERROR("ShmManager: RELEASE_SHM truncated, size=%zu", tag ? tag->data.size() : 0);
+                break;
+            }
             uint8_t shm_name_len = tag->data[2];
+            if (tag->data.size() < 3u + shm_name_len) {
+                LOG_ERROR("ShmManager: RELEASE_SHM name truncated");
+                break;
+            }
+            // 解析数据部分，从第3个字节开始
             const std::string shm_name = std::string(reinterpret_cast<const char*>(tag->data.data() + 3), static_cast<size_t>(shm_name_len));
 
             // 找到对应的共享内存名称的pidInfo信息
@@ -327,16 +350,28 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
 }
 
 void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag) {
+    if (tag->data.size() < 2) {
+        LOG_ERROR("ShmManager: process message truncated, size=%zu", tag->data.size());
+        return;
+    }
     uint16_t sub_message_id = Standard::Small_U8ToU16(tag->data.data());
     switch (sub_message_id) {
         case Define::MESSAGE_SUB_ID_ALLOCATE_SHM:
         {
+            if (!tag || tag->data.size() < 13) {
+                LOG_ERROR("ShmManager: ALLOCATE_SHM truncated, size=%zu", tag ? tag->data.size() : 0);
+                break;
+            }
+            uint8_t shm_name_len = tag->data[12];
+            if (tag->data.size() < 13u + shm_name_len) {
+                LOG_ERROR("ShmManager: ALLOCATE_SHM name truncated");
+                break;
+            }
             // 解析数据部分，从第3个字节开始
             uint8_t sender_logic = tag->data[2];
             uint8_t receiver_logic = tag->data[3];
             uint32_t slot_size = Standard::Small_U8ToU32(tag->data.data() + 4);
             uint32_t slot_count = Standard::Small_U8ToU32(tag->data.data() + 8);
-            uint8_t shm_name_len = tag->data[12];
             const std::string shm_name = std::string(reinterpret_cast<const char*>(tag->data.data() + 13), static_cast<size_t>(shm_name_len));
 
             const uint32_t os_receiver = lookupReceiverPidByLogicId(receiver_logic);
@@ -353,8 +388,16 @@ void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag) {
             break;
         case Define::MESSAGE_SUB_ID_RELEASE_SHM:
         {
-            // 解析数据部分，从第3个字节开始
+            if (!tag || tag->data.size() < 3) {
+                LOG_ERROR("ShmManager: RELEASE_SHM truncated, size=%zu", tag ? tag->data.size() : 0);
+                break;
+            }
             uint8_t shm_name_len = tag->data[2];
+            if (tag->data.size() < 3u + shm_name_len) {
+                LOG_ERROR("ShmManager: RELEASE_SHM name truncated");
+                break;
+            }
+            // 解析数据部分，从第3个字节开始
             const std::string shm_name = std::string(reinterpret_cast<const char*>(tag->data.data() + 3), static_cast<size_t>(shm_name_len));
             
             // 找到对应的共享内存名称的pidInfo信息
@@ -393,7 +436,7 @@ void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag) {
     }
 }
 
-bool ShmManager::RequestAllocateShm(std::string sender_shm_name, std::string receiver_shm_name, uint32_t slot_size, uint32_t slot_count, std::string new_shm_name) {
+bool ShmManager::RequestAllocateShm(const std::string& sender_shm_name, const std::string& receiver_shm_name, uint32_t slot_size, uint32_t slot_count, const std::string& new_shm_name) {
     // 这里需要先判断一下共享内存是否已经存在，如果存在则直接返回，否则需要创建新的共享内存
     auto it = shmInfosMap_.find(new_shm_name);
     if (it != shmInfosMap_.end()) {
@@ -444,7 +487,7 @@ bool ShmManager::RequestAllocateShm(std::string sender_shm_name, std::string rec
     return true;
 }
 
-bool ShmManager::RequestReleaseShm(std::string shm_name) {
+bool ShmManager::RequestReleaseShm(const std::string& shm_name) {
     // 这里需要先判断一下共享内存是否已经存在，如果存在则直接返回，否则需要创建新的共享内存
     auto it = shmInfosMap_.find(shm_name);
     if (it == shmInfosMap_.end()) {
@@ -489,10 +532,12 @@ void ShmManager::handleProcessCrash(uint32_t pid) {
             if (it_shm != shmInfosMap_.end() && it_shm->second) {
                 if (logic_process_id != Define::INVALID_FD) {
                     // 固定通道：禁止收发，等待进程拉起后恢复
+                    // 环内数据刻意保留，进程重新拉起后可恢复继续消费
                     it_shm->second->set_flag(0);
                     LOG_INFO("ShmManager: handleProcessCrash success, shm_name = %s, pid = %d", pidNameInfos_[i].shm_name.c_str(), pid);
                     i++;
                 } else {
+                    // 动态通道：走 RELEASE 解链 SHM 并通知对端；业务进程重启后须重新 RequestAllocateShm
                     // 组建消息直接调用handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag)处理释放共享内存
                     const std::string& name = pidNameInfos_[i].shm_name;
                     auto release_msg = std::make_shared<TagReceiveMessage>();
@@ -592,13 +637,13 @@ void ShmManager::createSendWork(std::string shm_name) {
 
 void ShmManager::postRequestAllocateShm(std::string sender_shm_name, std::string receiver_shm_name, uint32_t slot_size, uint32_t slot_count, std::string new_shm_name) {
     post([this, sender_shm_name = std::move(sender_shm_name), receiver_shm_name = std::move(receiver_shm_name), slot_size, slot_count, new_shm_name = std::move(new_shm_name)]() {
-        RequestAllocateShm(std::move(sender_shm_name), std::move(receiver_shm_name), slot_size, slot_count, std::move(new_shm_name));
+        RequestAllocateShm(sender_shm_name, receiver_shm_name, slot_size, slot_count, new_shm_name);
     });
 }
 
 void ShmManager::postRequestReleaseShm(std::string shm_name) {
     post([this, shm_name = std::move(shm_name)]() {
-        RequestReleaseShm(std::move(shm_name));
+        RequestReleaseShm(shm_name);
     });
 }
 

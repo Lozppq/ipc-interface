@@ -66,7 +66,7 @@
 ### 进程拉起与 Demo
 
 - 进程同步：保留 sync SHM；启动全槽置 `DONE` 作为放行；**不实现真实分槽握手**（注释标明占位）。  
-- `createProcess` 失败：宏 `kCreateProcessMaxRetry=50`，超出停止 `postTimer` 并打错误日志。  
+- `createProcess` 失败：每 100ms **一直重试**（不设次数上限），仅打错误/调试日志。  
 - Demo：`setReceiveHandler` 处理 `MESSAGE_ID_PROCESS`；README 与 `Common.h` 一致。
 
 ## 阶段 2：传参适中（B）
@@ -102,6 +102,6 @@
 
 ## 落地顺序
 
-1. 阶段 1 按模块改：停机/wakeup → 发送重试 → 协议/owner/recv head → 崩溃注释钉死 → createProcess 上限 → demo。  
+1. 阶段 1 按模块改：停机/wakeup → 发送重试 → 协议/owner/recv head → 崩溃注释钉死 → createProcess 持续重试 → demo。  
 2. 阶段 1 验证通过后再做阶段 2 传参。  
 3. 实现前用 `/sp-write-plan` 拆任务。

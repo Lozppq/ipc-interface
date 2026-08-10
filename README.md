@@ -10,7 +10,7 @@
 | Process1 | `Process1_Fd` | `/ipc_process_1` | `process_1` | demo：周期性向 Process2 发消息 |
 | Process2 | `Process2_Fd` | `/ipc_process_2` | `process_2` | demo：周期性向 Process1 发消息 |
 
-名称与可执行文件定义在 `src/define/common.h`：`kShmNames[]`、`kProcessExecutableNames[]`，下标与 `Daemon_Fd` / `ProcessN_Fd` 对齐。
+名称与可执行文件定义在 `src/define/Common.h`：`kShmNames[]`、`kProcessExecutableNames[]`，下标与 `Daemon_Fd` / `ProcessN_Fd` 对齐。
 
 另有进程同步 shm：`/ipc_process_sync`（`ProcessSyncInfo`）。其中 `flags[槽位]` 表示该槽是否允许拉起；`ProcessManager` 用 shm 名解析槽位后读 `flags[fd]`。
 
@@ -57,7 +57,7 @@ cd build/bin
 ./daemon
 ```
 
-daemon 在同步 shm 就绪后拉起 `process_1`、`process_2`。两端互相 `send`，日志中可看到收发内容。
+daemon 在同步 shm 就绪后拉起 `process_1`、`process_2`。两端互相 `send`，日志中可看到 `send` 与 `setReceiveHandler` 回调里的 `recv message_id=...`。
 
 若需单独调试某个业务进程（shm 已由 daemon 创建）：
 
@@ -73,15 +73,21 @@ cd build/bin
 ```cpp
 #include "mul_process/ShmManager.h"
 #include "define/Common.h"
+#include "define/MessageId.h"
 #include "log/Log_Print.h"
 
 int main() {
     auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
     mgr->initParams(IpcInterface::Define::Process1);  // 或 Process2 / Daemon
     mgr->start();
+    mgr->setReceiveHandler([](std::shared_ptr<IpcInterface::MulProcess::TagReceiveMessage> tag) {
+        if (!tag) return;
+        // 处理 MESSAGE_ID_PROCESS 业务消息
+    });
 
     std::vector<uint8_t> msg = {/* ... */};
-    mgr->send(std::move(msg), IpcInterface::Define::Process2);  // 移交所有权后异步发送
+    mgr->send(std::move(msg), IpcInterface::Define::MESSAGE_ID_PROCESS,
+              IpcInterface::Define::Process2);  // 移交所有权后异步发送
 
     mgr->wait();  // 或自行保活
     return 0;
@@ -89,12 +95,12 @@ int main() {
 ```
 
 - `initParams(本进程队列名)`：非 daemon 会登记所有 `kShmNames`，便于打开发送目标队列
-- `send(msg, 目标 shm 名)`：写入对端的接收环
-- 收消息在 `ShmManager::onReceiveMessage`（当前 demo 实现为打日志；可按业务改）
+- `send(msg, message_id, 目标 shm 名)`：写入对端的接收环；业务互通用 `MESSAGE_ID_PROCESS`
+- `setReceiveHandler`：注册 `MESSAGE_ID_PROCESS` 回调；daemon 协议走内部 `onReceiveMessage`
 
 ### 增加新业务进程
 
-在 `common.h` 中按同一下标同步扩展（插在 `INVALID_FD` 之前）：
+在 `Common.h` 中按同一下标同步扩展（插在 `INVALID_FD` 之前）：
 
 1. `kShmNames` 增加 `/ipc_process_N`
 2. `kProcessExecutableNames` 增加 `./process_N`
@@ -109,7 +115,7 @@ int main() {
 ```text
 src/
   daemon/          # daemon 入口
-  define/          # common.h（名称、槽位、同步结构）、MessageId.h
+  define/          # Common.h（名称、槽位、同步结构）、MessageId.h
   log/             # 日志
   model/           # ThreadBase / MessageThread / LockFreeQueue / ShmCreator
   mul_process/     # ShmManager / ProcessManager / StreamShmCreator / Send&ReceiveWork

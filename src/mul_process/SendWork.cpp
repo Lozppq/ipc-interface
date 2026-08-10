@@ -38,11 +38,25 @@ void SendWork::send(std::shared_ptr<TagSendMessage> buf_msg) {
     });
 }
 
-void SendWork::SendMessage(std::shared_ptr<TagSendMessage> tag) {
+void SendWork::SendMessage(const std::shared_ptr<TagSendMessage>& tag) {
     if (!isRunning() || !tag || tag->data.empty() || !tag->shm) {
         return;
     }
-    tag->shm->send(tag);
+    if (tag->shm->send(tag) >= 0) {
+        return;
+    }
+    tag->retry_count++;
+    if (!isRunning()) {
+        return;
+    }
+    if (tag->retry_count <= kSendMaxRetry) {
+        post([this, tag]() {
+            SendMessage(tag);
+        });
+    } else {
+        LOG_ERROR("SendWork: send failed after %u retries, message_id=%u",
+                  tag->retry_count, static_cast<unsigned>(tag->message_id));
+    }
 }
 
 void SendWork::OnThreadInit() {

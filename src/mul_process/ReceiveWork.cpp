@@ -16,12 +16,21 @@ ReceiveWork::ReceiveWork(StreamShmCreator* shm, ReceiveHandler handler, std::str
     name_(std::move(name)) {}
 
 ReceiveWork::~ReceiveWork() {
+    stop();
     receive_handler_ = NULL;
     shm_ = NULL;
 }
 
 void ReceiveWork::setReceiveHandler(ReceiveHandler handler) {
     receive_handler_ = std::move(handler);
+}
+
+void ReceiveWork::stop() {
+    setRunning(false);
+    if (shm_) {
+        shm_->wakeup_recv();
+    }
+    MessageThread::stop();
 }
 
 void ReceiveWork::ReceiveMessage() {
@@ -31,7 +40,7 @@ void ReceiveWork::ReceiveMessage() {
     std::shared_ptr<TagReceiveMessage> buf_msg_ = std::make_shared<TagReceiveMessage>();
     if (shm_->recv(buf_msg_) > 0) {
         receive_handler_(buf_msg_);
-    } else {
+    } else if (isRunning()) {
         LOG_ERROR("ReceiveWork: ReceiveMessage failed, shm_name = %s", shm_->get_shm_name().c_str());
     }
 }

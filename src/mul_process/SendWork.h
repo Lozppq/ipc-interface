@@ -31,7 +31,7 @@ public:
 
 protected:
     void OnThreadInit() override;
-    void SendMessage(std::shared_ptr<TagSendMessage> tag);
+    void SendMessage(const std::shared_ptr<TagSendMessage>& tag);
 
 private:
     StreamShmCreator* shm_{NULL};

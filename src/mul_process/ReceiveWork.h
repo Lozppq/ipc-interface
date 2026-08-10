@@ -22,6 +22,7 @@ public:
     ReceiveWork(StreamShmCreator* shm, ReceiveHandler handler, std::string name = {});
     ~ReceiveWork();
     void setReceiveHandler(ReceiveHandler handler);
+    void stop() override;
 
     ReceiveWork(const ReceiveWork&) = delete;
     ReceiveWork& operator=(const ReceiveWork&) = delete;

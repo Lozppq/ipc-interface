@@ -16,6 +16,10 @@ int main() {
     auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
     mgr->initParams(IpcInterface::Define::Process2);
     mgr->start();
+    mgr->setReceiveHandler([](std::shared_ptr<IpcInterface::MulProcess::TagReceiveMessage> tag) {
+        if (!tag) return;
+        LOG_INFO("recv message_id=%u bytes=%zu", tag->message_id, tag->data.size());
+    });
 
     LOG_INFO("process_2 started, pid=%d", getpid());
 

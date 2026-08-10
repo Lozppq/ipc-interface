@@ -155,14 +155,14 @@ private:
      * @param new_shm_name 申请的共享内存名称
      * @return 是否成功申请共享内存
     */
-    bool RequestAllocateShm(std::string sender_shm_name, std::string receiver_shm_name, uint32_t slot_size, uint32_t slot_count, std::string new_shm_name);
+    bool RequestAllocateShm(const std::string& sender_shm_name, const std::string& receiver_shm_name, uint32_t slot_size, uint32_t slot_count, const std::string& new_shm_name);
 
     /**
      * @brief 请求释放共享内存
      * @param shm_name 共享内存名称
      * @return 是否成功释放共享内存
     */
-    bool RequestReleaseShm(std::string shm_name);
+    bool RequestReleaseShm(const std::string& shm_name);
 
     /**
      * @brief 根据共享内存名称创建接收消息线程

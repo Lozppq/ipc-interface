@@ -206,6 +206,11 @@ public:
     void set_flag(uint32_t flag);
 
     /**
+     * @brief 清除接收允许位并唤醒阻塞在 recv 上的 sem_wait
+     */
+    void wakeup_recv();
+
+    /**
      * @brief 获取接收者 pid
      * @return 接收者 pid，无效时返回 0
      */
@@ -357,7 +362,7 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
     // 用于计算槽接收超时
     uint64_t start_time = get_timestamp();
 
-    uint32_t head, slice_count = 0, t_msg_index = 0, tail_last = 0;
+    uint32_t head, slice_count = 0, slices_done = 0, t_msg_index = 0, tail_last = 0;
     head = hdr->head.load(std::memory_order_acquire);
     // 获取数据
     while (1) {
@@ -368,17 +373,22 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
                 slice_count = hdr->data[head].slice_count.load(std::memory_order_acquire);
                 hdr->data[head].slice_id.store(0, std::memory_order_release);
                 hdr->data[head].slice_count.store(0, std::memory_order_release);
+                if (slice_count == 0) {
+                    hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
+                    head = (head + 1) % slot_count_;
+                    continue;
+                }
                 // 预设buf的总大小为第一个slice的data前四个字节组成的无符号数大小
                 uint32_t total_len = Standard::Small_U8ToU32(hdr->data[head].data);
                 if (total_len == 0) {
-                    hdr->head.store(head + 1, std::memory_order_release);
                     hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
+                    head = (head + 1) % slot_count_;
                     slice_count = 0;
                     continue;
                 }
                 if (total_len < 2 || slot_size_ < 6) {
-                    hdr->head.store(head + 1, std::memory_order_release);
                     hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
+                    head = (head + 1) % slot_count_;
                     slice_count = 0;
                     continue;
                 }
@@ -402,10 +412,12 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
                 t_msg_index += copy_len;
             }
             hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
-            if (slice_count == hdr->data[head].slice_id.load(std::memory_order_acquire)) {
+            slices_done++;
+            head = (head + 1) % slot_count_;
+            // 已收齐首片声明的 slice_count 片则结束（勿用被清零的 slice_id 判断）
+            if (slice_count > 0 && slices_done >= slice_count) {
                 break;
             }
-            head = (head + 1) % slot_count_;
         } else {
             // 启发式探索：这里需要计算，如果等待当前槽位到固定tail超时，则直接将当前槽位数据丢弃再break
             uint32_t tail = hdr->tail.load(std::memory_order_acquire);
