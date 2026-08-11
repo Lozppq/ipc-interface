@@ -7,9 +7,9 @@ namespace Log {
 
 // 打印日志级别
 enum{
-    Level_Info = 0x01,
+    Level_Error = 0x01,
     Level_Warning = 0x02,
-    Level_Error = 0x04,
+    Level_Info = 0x04,
     Level_Debug = 0x08,
     Level_All = 0x0F,
 };
