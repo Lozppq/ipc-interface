@@ -216,15 +216,27 @@ private:
     */
     void handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag);
 
-    std::map<std::string, std::unique_ptr<StreamShmCreator>> shmInfosMap_;
-    std::map<std::string, std::unique_ptr<ReceiveWork>> receiveWorkMap_;
-    std::map<std::string, std::unique_ptr<SendWork>> sendWorkMap_;
+    using ShmInfoMap = std::map<std::string, std::shared_ptr<StreamShmCreator>>;
+    using SendWorkMap = std::map<std::string, std::shared_ptr<SendWork>>;
+    using ReceiveWorkMap = std::map<std::string, std::shared_ptr<ReceiveWork>>;
+
+    std::shared_ptr<ShmInfoMap> cloneShmInfos() const;
+    void storeShmInfos(std::shared_ptr<ShmInfoMap> m);
+    std::shared_ptr<SendWorkMap> cloneSendWorks() const;
+    void storeSendWorks(std::shared_ptr<SendWorkMap> m);
+    std::shared_ptr<ReceiveWorkMap> cloneReceiveWorks() const;
+    void storeReceiveWorks(std::shared_ptr<ReceiveWorkMap> m);
+
+    // 无锁快照：单写（本线程）多读（业务 send）
+    std::shared_ptr<const ShmInfoMap> shm_infos_;
+    std::shared_ptr<const SendWorkMap> send_works_;
+    std::shared_ptr<const ReceiveWorkMap> receive_works_;
 
     std::string shm_name_;  // 本进程的消息接口名称
     // 接收消息线程对象
     ReceiveWork* receive_work_{NULL};
-    // 发送消息线程对象
-    SendWork* send_work_{NULL};
+    // 默认发送消息线程
+    std::shared_ptr<SendWork> send_work_;
     // 初始化进程id与消息接口名称映射
     std::vector<PidNameInfo> pidNameInfos_;
     ReceiveHandler receive_handler_{NULL};
