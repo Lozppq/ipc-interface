@@ -19,13 +19,13 @@ namespace MulProcess {
 
 class SendWork : public Model::MessageThread {
 public:
-    explicit SendWork(StreamShmCreator* shm = NULL, std::string name = {});
+    explicit SendWork(std::shared_ptr<StreamShmCreator> shm = nullptr, std::string name = {});
     ~SendWork();
 
     SendWork(const SendWork&) = delete;
     SendWork& operator=(const SendWork&) = delete;
 
-    // 默认使用初始化的共享内存发送；若传入 shm 非空则使用传入的（shared_ptr 保证发送完成前对象存活）
+    // 默认使用初始化的共享内存发送；若传入 shm 非空则使用传入的（tag->shm 保活至发送/重试结束）
     void send(std::vector<uint8_t> msg, uint16_t message_id, std::shared_ptr<StreamShmCreator> shm = nullptr);
     void send(std::shared_ptr<TagSendMessage> buf_msg, std::shared_ptr<StreamShmCreator> shm_keep = nullptr);
 
@@ -34,7 +34,7 @@ protected:
     void SendMessage(const std::shared_ptr<TagSendMessage>& tag);
 
 private:
-    StreamShmCreator* shm_{NULL};
+    std::shared_ptr<StreamShmCreator> shm_;
     std::string name_;
 };
 

@@ -775,7 +775,7 @@ void ShmManager::createSendWork(std::string shm_name) {
         });
         return;
     }
-    auto work = std::make_shared<SendWork>(shms->at(shm_name).get());
+    auto work = std::make_shared<SendWork>(shms->at(shm_name));
     auto neu = cloneSendWorks();
     neu->emplace(shm_name, work);
     storeSendWorks(neu);

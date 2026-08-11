@@ -9,11 +9,11 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-SendWork::SendWork(StreamShmCreator* shm, std::string name)
-    : MessageThread(8192), shm_(shm), name_(std::move(name)) {}
+SendWork::SendWork(std::shared_ptr<StreamShmCreator> shm, std::string name)
+    : MessageThread(8192), shm_(std::move(shm)), name_(std::move(name)) {}
 
 SendWork::~SendWork() {
-    shm_ = NULL;
+    shm_.reset();
 }
 
 void SendWork::send(std::vector<uint8_t> msg, uint16_t message_id, std::shared_ptr<StreamShmCreator> shm) {
@@ -23,8 +23,8 @@ void SendWork::send(std::vector<uint8_t> msg, uint16_t message_id, std::shared_p
     auto tag = std::make_shared<TagSendMessage>();
     tag->data = std::move(msg);
     tag->message_id = message_id;
-    post([this, tag = std::move(tag), shm = std::move(shm)]() {
-        tag->shm = shm ? shm.get() : shm_;
+    tag->shm = shm ? std::move(shm) : shm_;
+    post([this, tag = std::move(tag)]() {
         SendMessage(tag);
     });
 }
@@ -33,13 +33,12 @@ void SendWork::send(std::shared_ptr<TagSendMessage> buf_msg, std::shared_ptr<Str
     if (!buf_msg || buf_msg->data.empty()) {
         return;
     }
-    post([this, buf_msg = std::move(buf_msg), shm_keep = std::move(shm_keep)]() {
-        if (shm_keep) {
-            buf_msg->shm = shm_keep.get();
-        }
-        if (!buf_msg->shm) {
-            buf_msg->shm = shm_;
-        }
+    if (shm_keep) {
+        buf_msg->shm = std::move(shm_keep);
+    } else if (!buf_msg->shm) {
+        buf_msg->shm = shm_;
+    }
+    post([this, buf_msg = std::move(buf_msg)]() {
         SendMessage(buf_msg);
     });
 }

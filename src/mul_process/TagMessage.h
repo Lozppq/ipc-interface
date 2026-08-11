@@ -22,7 +22,7 @@ class StreamShmCreator;
 struct TagSendMessage {
     std::vector<uint8_t> data;
     uint16_t message_id{0};
-    StreamShmCreator* shm{NULL};
+    std::shared_ptr<StreamShmCreator> shm;
     uint32_t retry_count{0};
 };
 
