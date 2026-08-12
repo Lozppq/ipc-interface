@@ -9,16 +9,17 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-ReceiveWork::ReceiveWork(StreamShmCreator* shm, ReceiveHandler handler, std::string name)
-    : MessageThread(1024, std::move(name)), 
-    shm_(shm), 
-    receive_handler_(handler), 
-    name_(std::move(name)) {}
+ReceiveWork::ReceiveWork(std::shared_ptr<StreamShmCreator> shm, ReceiveHandler handler, std::string name)
+    : MessageThread(1024, std::move(name)),
+      shm_(std::move(shm)),
+      receive_handler_(std::move(handler)) {
+
+}
 
 ReceiveWork::~ReceiveWork() {
     stop();
-    receive_handler_ = NULL;
-    shm_ = NULL;
+    receive_handler_ = nullptr;
+    shm_.reset();
 }
 
 void ReceiveWork::setReceiveHandler(ReceiveHandler handler) {

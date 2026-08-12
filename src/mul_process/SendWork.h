@@ -35,7 +35,6 @@ protected:
 
 private:
     std::shared_ptr<StreamShmCreator> shm_;
-    std::string name_;
 };
 
 } // namespace MulProcess

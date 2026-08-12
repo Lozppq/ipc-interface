@@ -19,7 +19,7 @@ namespace MulProcess {
 
 class ReceiveWork : public Model::MessageThread {
 public:
-    ReceiveWork(StreamShmCreator* shm, ReceiveHandler handler, std::string name = {});
+    ReceiveWork(std::shared_ptr<StreamShmCreator> shm, ReceiveHandler handler, std::string name = {});
     ~ReceiveWork();
     void setReceiveHandler(ReceiveHandler handler);
     void stop() override;
@@ -32,9 +32,8 @@ protected:
     void ReceiveMessage();
 
 private:
-    StreamShmCreator* shm_{NULL};
+    std::shared_ptr<StreamShmCreator> shm_;
     ReceiveHandler receive_handler_;
-    std::string name_;
 };
 
 } // namespace MulProcess

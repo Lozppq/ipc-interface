@@ -217,7 +217,7 @@ void ShmManager::initReceiveWork() {
         LOG_ERROR("ShmManager: initReceiveWork failed, shm_name=%s not found", shm_name_.c_str());
         return;
     }
-    receive_work_ = new ReceiveWork(shms->at(shm_name_).get(), [this](std::shared_ptr<TagReceiveMessage> tag) {
+    receive_work_ = new ReceiveWork(shms->at(shm_name_), [this](std::shared_ptr<TagReceiveMessage> tag) {
         // 投递到 ShmManager 工作线程，避免在接收线程里处理业务/停线程
         post([this, tag = std::move(tag)]() {
             onReceiveMessage(tag);
@@ -756,7 +756,7 @@ void ShmManager::createReceiveWork(std::string shm_name, ReceiveHandler receive_
         });
         return;
     }
-    auto work = std::make_shared<ReceiveWork>(shms->at(shm_name).get(), receive_handler);
+    auto work = std::make_shared<ReceiveWork>(shms->at(shm_name), receive_handler);
     auto neu = cloneReceiveWorks();
     neu->emplace(shm_name, work);
     storeReceiveWorks(neu);
