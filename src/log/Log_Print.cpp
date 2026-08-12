@@ -20,7 +20,7 @@ namespace Log {
 static std::string g_log_prefix_storage = "unknown";
 
 // 默认不打印debug级别的日志
-static uint32_t g_log_level = Level_Info | Level_Warning | Level_Error;
+static uint32_t g_log_level = Level_Info;
 
 void setLogLevel(uint32_t level) {
     g_log_level = level;
@@ -100,7 +100,7 @@ void LogPrint::printLog(int level, const char* fmt, ...) {
     buf[off] = '\0';
 
     // 如果日志级别匹配，则打印到控制台
-    if (g_log_level & level){
+    if (g_log_level >= level){
         std::printf("%s", buf);
     }
 }
