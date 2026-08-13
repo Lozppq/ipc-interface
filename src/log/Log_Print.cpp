@@ -45,7 +45,7 @@ LogPrint* LogPrint::getInstance() {
     return &instance;
 }
 
-void LogPrint::printLog(int level, const char* fmt, ...) {
+void LogPrint::printLog(uint32_t level, const char* func, int line, const char* fmt, ...) {
     if (!fmt) return;
 
     const char* level_tag = "UNKNOWN";
@@ -81,8 +81,9 @@ void LogPrint::printLog(int level, const char* fmt, ...) {
 #endif
 
     char buf[1024];
-    // 内容区：预留最后 2 字节给 '\n' 和 '\0'
-    constexpr int kBodyCap = static_cast<int>(sizeof(buf)) - 2;  // 最多写到这里
+    // 预留 " -- func:line\n\0"
+    constexpr int kTail = 160;
+    constexpr int kBodyCap = static_cast<int>(sizeof(buf)) - kTail;
     int off = snprintf(buf, kBodyCap + 1, "%s %s [%s] [%ld] ",
                        time_buf, level_tag, g_log_prefix_storage.c_str(), tid);
     if (off < 0) off = 0;
@@ -95,9 +96,8 @@ void LogPrint::printLog(int level, const char* fmt, ...) {
         off += n;
         if (off > kBodyCap) off = kBodyCap;
     }
-    // 无论前面是否截断，这里一定能放下
-    buf[off++] = '\n';
-    buf[off] = '\0';
+    snprintf(buf + off, sizeof(buf) - static_cast<size_t>(off), " -- %s:%d\n",
+             func ? func : "?", line);
 
     // 如果日志级别匹配，则打印到控制台
     if (g_log_level >= level){

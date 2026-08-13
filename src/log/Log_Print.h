@@ -37,16 +37,18 @@ public:
     /**
      * @brief 打印日志，支持像 printf 一样的格式化
      * @param level 日志级别
+     * @param func 调用函数名
+     * @param line 调用行号
      * @param fmt 格式化字符串，后接可变参数
     */
-    void printLog(int level, const char* fmt, ...);
+    void printLog(uint32_t level, const char* func, int line, const char* fmt, ...);
 };
 
 // 日志打印宏
-#define LOG_INFO(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Info, fmt, ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Warning, fmt, ##__VA_ARGS__)
-#define LOG_ERROR(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Error, fmt, ##__VA_ARGS__)
-#define LOG_DEBUG(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Debug, fmt, ##__VA_ARGS__)
+#define LOG_INFO(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Info, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Warning, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Error, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Debug, __func__, __LINE__, fmt, ##__VA_ARGS__)
 
 
 } // namespace Log
