@@ -22,6 +22,8 @@
 - `MessageThread`：无锁任务队列 + 定时器工作线程
 - `Log_Print`：`LOG_INFO` / `LOG_ERROR` 等
 
+**环形共享内存模式**：只支持**单接收者、多发送者**（1 个 reader，N 个 writer）。同一环上不要挂多个接收线程/进程；多路并发接收需各自申请独立通道。
+
 ## 编译
 
 依赖：g++（C++14）、pthread、librt。仅支持 Linux（依赖 `shm_open` / `fork` / `waitpid` 等）。
@@ -46,23 +48,28 @@ build/lib/libipc-interface.so
 build/bin/daemon
 build/bin/process_1
 build/bin/process_2
+build/bin/process_3   # 随 demo/*.cpp 自动生成
 ```
 
 ## 运行 demo
 
-`ProcessManager` 按 `kProcessExecutableNames` 拉起 `./process_1`、`./process_2`，需在 `build/bin` 下启动 daemon：
+必须在**源码根目录**下进入产物目录再启动守护进程（`ProcessManager` 用相对路径 `./process_N` 拉起子进程，工作目录不对会找不到可执行文件）：
 
 ```bash
+cd /path/to/ipc-interface   # 源码根目录
+make                        # 若尚未编译
 cd build/bin
-./daemon
+./daemon &
 ```
 
-daemon 在同步 shm 就绪后拉起 `process_1`、`process_2`。两端互相 `send`，日志中可看到 `send` 与 `setReceiveHandler` 回调里的 `recv message_id=...`。
+`./daemon &` 后台运行后，守护进程会创建固定环形 shm / 同步 shm，再按 `kProcessExecutableNames` **自动拉起** `process_1`、`process_2`、`process_3` 等业务进程，无需再手动逐个启动。
+
+进程间通过各自固定 inbox 互发 `MESSAGE_ID_PROCESS`；日志中可看到收发与 `setReceiveHandler` 回调。
 
 若需单独调试某个业务进程（shm 已由 daemon 创建）：
 
 ```bash
-cd build/bin
+cd /path/to/ipc-interface/build/bin
 ./process_1
 # 另一个终端
 ./process_2
@@ -229,6 +236,7 @@ Makefile
 
 ## 说明
 
+- **环形队列（`StreamShmCreator`）仅支持单接收者多发送者**：一个共享内存环只允许一个接收端消费；发送端可以有多个。不支持多接收者争用同一环；若需一对多广播或扇出，应为每个接收者创建独立通道。
 - 共享内存对象在 `/dev/shm/`，名称以 `/` 开头（如 `/ipc_process_1`）
 - 同步位访问：`ProcessSyncInfo::flags[Define::Process1_Fd]`（槽位枚举，不是系统 fd）
 - 槽位超时等策略见 `StreamShmCreator.h` 中 `TIMEOUT_*`

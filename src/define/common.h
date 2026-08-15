@@ -49,6 +49,7 @@ constexpr const char* kShmNames[] = {
     "/ipc_daemon",
     "/ipc_process_1",
     "/ipc_process_2",
+    "/ipc_process_3",
 };
 
 constexpr uint32_t kShmNameCount = sizeof(kShmNames) / sizeof(kShmNames[0]);
@@ -57,12 +58,14 @@ constexpr uint32_t kShmNameCount = sizeof(kShmNames) / sizeof(kShmNames[0]);
 constexpr const char* Daemon = kShmNames[0];
 constexpr const char* Process1 = kShmNames[1];
 constexpr const char* Process2 = kShmNames[2];
+constexpr const char* Process3 = kShmNames[3];
 
 // 各个进程之间的执行方式名称
 constexpr const char* kProcessExecutableNames[] = {
     "./daemon",
     "./process_1",
     "./process_2",
+    "./process_3",
 };
 
 constexpr uint32_t kProcessExecutableNameCount = sizeof(kProcessExecutableNames) / sizeof(kProcessExecutableNames[0]);
@@ -70,12 +73,14 @@ constexpr uint32_t kProcessExecutableNameCount = sizeof(kProcessExecutableNames)
 constexpr const char* DaemonExecutableName = kProcessExecutableNames[0];
 constexpr const char* Process1ExecutableName = kProcessExecutableNames[1];
 constexpr const char* Process2ExecutableName = kProcessExecutableNames[2];
+constexpr const char* Process3ExecutableName = kProcessExecutableNames[3];
 
 // 逻辑进程槽位（与 kShmNames 下标一致，用作 ProcessSyncInfo::flags 下标；不是系统 fd）
 enum {
     Daemon_Fd = 0,
     Process1_Fd,
     Process2_Fd,
+    Process3_Fd,
     INVALID_FD  // 哨兵，须等于 kShmNameCount
 };
 
@@ -83,6 +88,7 @@ enum {
 static_assert(Daemon_Fd == 0, "Daemon_Fd must be 0");
 static_assert(Process1_Fd == 1, "Process1_Fd must match kShmNames[1]");
 static_assert(Process2_Fd == 2, "Process2_Fd must match kShmNames[2]");
+static_assert(Process3_Fd == 3, "Process3_Fd must match kShmNames[3]");
 static_assert(INVALID_FD == kShmNameCount, "INVALID_FD must equal kShmNameCount");
 static_assert(kShmNameCount == kProcessExecutableNameCount,
               "shm name count must match executable name count");

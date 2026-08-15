@@ -1,6 +1,6 @@
 /**
  * @file process_2.cpp
- * @brief process_2 demo：初始化后周期性向 process_1 发消息
+ * @brief process_2 demo：初始化后周期性向所有进程发消息
  */
 #include "mul_process/ShmManager.h"
 #include "define/Common.h"
@@ -66,8 +66,13 @@ int main() {
         for (uint16_t i = 1; i <= n; ++i) {
             p[i] = i;
         }
-        mgr->send(std::move(msg), IpcInterface::Define::MESSAGE_ID_PROCESS,
-                  IpcInterface::Define::Process1);
+        // 除了不给自身和守护进程发消息，其他都发
+        for (uint8_t i = 0; i < IpcInterface::Define::kShmNameCount; i++) {
+            if (i == IpcInterface::Define::Daemon_Fd || i == IpcInterface::Define::Process2_Fd) {
+                continue;
+            }
+            mgr->send(msg, IpcInterface::Define::MESSAGE_ID_PROCESS, IpcInterface::Define::kShmNames[i]);
+        }
         // 休眠10ms，小槽数量下，避免单个发送线程过载
         usleep(10000);
     }

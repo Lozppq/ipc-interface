@@ -10,12 +10,14 @@ namespace IpcInterface {
 namespace MulProcess {
 
 SendWork::SendWork(std::shared_ptr<StreamShmCreator> shm, std::string name)
-    : MessageThread(8192, std::move(name)), shm_(std::move(shm)) {
+    : MessageThread(8192, std::move(name)), 
+    shm_(std::move(shm)) {
         
     }
 
 SendWork::~SendWork() {
     shm_.reset();
+    stop();
 }
 
 void SendWork::send(std::vector<uint8_t> msg, uint16_t message_id, std::shared_ptr<StreamShmCreator> shm) {

@@ -1,6 +1,6 @@
 /**
- * @file process_1.cpp
- * @brief process_1 demo：初始化后周期性向 process_2 发消息
+ * @file process_3.cpp
+ * @brief process_3 demo：初始化后周期性向所有进程发消息
  */
 #include "mul_process/ShmManager.h"
 #include "define/Common.h"
@@ -14,9 +14,9 @@
 #include <unistd.h>
 
 int main() {
-    IpcInterface::Log::setLogPrefix("process_1");
+    IpcInterface::Log::setLogPrefix("process_3");
     auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
-    mgr->initParams(IpcInterface::Define::Process1);
+    mgr->initParams(IpcInterface::Define::Process3);
     mgr->start();
 
     std::atomic<uint64_t> recv_bytes{0};
@@ -53,7 +53,7 @@ int main() {
         }
     });
 
-    LOG_INFO("process_1 started, pid=%d", getpid());
+    LOG_INFO("process_3 started, pid=%d", getpid());
 
     std::mt19937 rng{std::random_device{}()};
     std::uniform_int_distribution<int> dist(1, 1000);
@@ -68,7 +68,7 @@ int main() {
         }
         // 除了不给自身和守护进程发消息，其他都发
         for (uint8_t i = 0; i < IpcInterface::Define::kShmNameCount; i++) {
-            if (i == IpcInterface::Define::Daemon_Fd || i == IpcInterface::Define::Process1_Fd) {
+            if (i == IpcInterface::Define::Daemon_Fd || i == IpcInterface::Define::Process3_Fd) {
                 continue;
             }
             mgr->send(msg, IpcInterface::Define::MESSAGE_ID_PROCESS, IpcInterface::Define::kShmNames[i]);
