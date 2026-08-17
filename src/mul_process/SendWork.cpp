@@ -63,8 +63,8 @@ void SendWork::SendMessage(const std::shared_ptr<TagSendMessage>& tag) {
             SendMessage(tag);
         });
     } else {
-        LOG_ERROR("SendWork: send failed after %u retries, message_id=%u",
-                  tag->retry_count, static_cast<unsigned>(tag->message_id));
+        LOG_ERROR("SendWork: send failed data size=%u, toShm=%s",
+                  tag->data.size(), tag->shm->get_shm_name().c_str());
     }
 }
 
