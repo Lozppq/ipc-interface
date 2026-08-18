@@ -68,7 +68,7 @@ void MessageThread::postTimer(int delay_ms, std::function<void()> callback) {
     }
 }
 
-uint32_t MessageThread::startTimer(int interval_ms, std::function<void()> callback, bool periodic) {
+uint32_t MessageThread::startTimer(int interval_ms, bool periodic, std::function<void()> callback) {
     uint32_t timer_id = 0;
     auto interval = std::chrono::milliseconds(interval_ms);
     if (isInWorkerThread()) {

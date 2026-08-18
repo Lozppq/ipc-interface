@@ -36,11 +36,13 @@ void ReceiveWork::stop() {
 
 void ReceiveWork::ReceiveMessage() {
     if (!isRunning() || !m_shm || !m_receive_handler) {
+        postTimer(1000, [this]() { ReceiveMessage(); });
         return;
     }
     auto buf_msg = std::make_shared<TagReceiveMessage>();
     uint32_t n = m_shm->recv(buf_msg);
     if (!isRunning()) {
+        postTimer(1000, [this]() { ReceiveMessage(); });
         return;
     }
     if (n > 0) {

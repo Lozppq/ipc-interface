@@ -50,11 +50,11 @@ public:
     /**
      * @brief 启动周期性定时器
      * @param interval_ms 周期毫秒数
-     * @param callback 定时器回调函数
      * @param periodic 是否周期性
+     * @param callback 定时器回调函数
      * @return 定时器id
      */
-    uint32_t startTimer(int interval_ms, std::function<void()> callback, bool periodic = true);
+    uint32_t startTimer(int interval_ms, bool periodic, std::function<void()> callback);
 
     /**
      * @brief 停止周期性定时器
