@@ -103,7 +103,7 @@ enum{
 
 // flags[Daemon_Fd / Process1_Fd / ...] 表示对应槽位是否同步完成
 typedef struct {
-    std::atomic<uint8_t> flags[kShmNameCount];
+    std::atomic<uint8_t> m_flags[kShmNameCount];
 } ProcessSyncInfo;
 
 // 进程同步结构体共享内存名称

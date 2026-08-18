@@ -11,40 +11,40 @@ namespace MulProcess {
 
 ReceiveWork::ReceiveWork(std::shared_ptr<StreamShmCreator> shm, ReceiveHandler handler, std::string name)
     : MessageThread(1024, std::move(name)),
-      shm_(std::move(shm)),
-      receive_handler_(std::move(handler)) {
+      m_shm(std::move(shm)),
+      m_receive_handler(std::move(handler)) {
 
 }
 
 ReceiveWork::~ReceiveWork() {
     stop();
-    receive_handler_ = nullptr;
-    shm_.reset();
+    m_receive_handler = nullptr;
+    m_shm.reset();
 }
 
 void ReceiveWork::setReceiveHandler(ReceiveHandler handler) {
-    receive_handler_ = std::move(handler);
+    m_receive_handler = std::move(handler);
 }
 
 void ReceiveWork::stop() {
     setRunning(false);
-    if (shm_) {
-        shm_->wakeup_recv();
+    if (m_shm) {
+        m_shm->wakeup_recv();
     }
     MessageThread::stop();
 }
 
 void ReceiveWork::ReceiveMessage() {
-    if (!isRunning() || !shm_ || !receive_handler_) {
+    if (!isRunning() || !m_shm || !m_receive_handler) {
         return;
     }
     auto buf_msg = std::make_shared<TagReceiveMessage>();
-    uint32_t n = shm_->recv(buf_msg);
+    uint32_t n = m_shm->recv(buf_msg);
     if (!isRunning()) {
         return;
     }
     if (n > 0) {
-        receive_handler_(buf_msg);
+        m_receive_handler(buf_msg);
         post([this]() { ReceiveMessage(); });
         return;
     }

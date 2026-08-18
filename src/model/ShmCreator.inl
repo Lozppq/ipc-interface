@@ -6,11 +6,11 @@
 
 template<typename T>
 ShmCreator<T>::ShmCreator(const std::string& name, uint32_t total_size) 
-    : total_size_(total_size),
-      shm_ptr_(NULL),
-      shm_fd_(-1),
-      is_owner_(false),
-      shm_name_(name) {
+    : m_total_size(total_size),
+      m_shm_ptr(NULL),
+      m_shm_fd(-1),
+      m_is_owner(false),
+      m_shm_name(name) {
     
 }
 
@@ -21,7 +21,7 @@ ShmCreator<T>::~ShmCreator() {
 
 template<typename T>
 T* ShmCreator<T>::get_shm_ptr() const {
-    return shm_ptr_;
+    return m_shm_ptr;
 }
 
 template<typename T>
@@ -29,25 +29,25 @@ bool ShmCreator<T>::create_shm(bool create) {
 #if defined(__linux__)
     if (!create) {
         struct stat st;
-        if (fstat(shm_fd_, &st) != 0 || st.st_size == 0) {
+        if (fstat(m_shm_fd, &st) != 0 || st.st_size == 0) {
             LOG_ERROR("ShmCreator: fstat failed, st.st_size = %ld", st.st_size);
             return false;
         }
-        total_size_ = static_cast<uint32_t>(st.st_size);
+        m_total_size = static_cast<uint32_t>(st.st_size);
     } else {
-        if (ftruncate(shm_fd_, total_size_) != 0) {
-            LOG_ERROR("ShmCreator: ftruncate failed, total_size_ = %d", total_size_);
+        if (ftruncate(m_shm_fd, m_total_size) != 0) {
+            LOG_ERROR("ShmCreator: ftruncate failed, m_total_size = %d", m_total_size);
             return false;
         }
     }
 
-    void* ptr = mmap(NULL, total_size_, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd_, 0);
+    void* ptr = mmap(NULL, m_total_size, PROT_READ | PROT_WRITE, MAP_SHARED, m_shm_fd, 0);
     if (ptr == MAP_FAILED) {
         LOG_ERROR("ShmCreator: mmap failed");
-        shm_ptr_ = NULL;
+        m_shm_ptr = NULL;
         return false;
     }
-    shm_ptr_ = static_cast<T*>(ptr);
+    m_shm_ptr = static_cast<T*>(ptr);
     return true;
 #else
     (void)create;
@@ -58,25 +58,25 @@ bool ShmCreator<T>::create_shm(bool create) {
 template<typename T>
 bool ShmCreator<T>::open(bool create) {
 #if defined(__linux__)
-    is_owner_ = create;
+    m_is_owner = create;
     if (create) {
-        shm_fd_ = shm_open(shm_name_.c_str(), O_CREAT | O_RDWR | O_EXCL, 0666);
-        if (shm_fd_ >= 0) {
+        m_shm_fd = shm_open(m_shm_name.c_str(), O_CREAT | O_RDWR | O_EXCL, 0666);
+        if (m_shm_fd >= 0) {
             return create_shm(true);
         } else {
-            shm_fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0666);
-            if (shm_fd_ >= 0) {
+            m_shm_fd = shm_open(m_shm_name.c_str(), O_RDWR, 0666);
+            if (m_shm_fd >= 0) {
                 return create_shm(false);
             } else {
-                LOG_ERROR("ShmCreator: open failed, shm_fd_ = %d", shm_fd_);
+                LOG_ERROR("ShmCreator: open failed, m_shm_fd = %d", m_shm_fd);
             }
         }
     } else {
-        shm_fd_ = shm_open(shm_name_.c_str(), O_RDWR, 0666);
-        if (shm_fd_ >= 0) {
+        m_shm_fd = shm_open(m_shm_name.c_str(), O_RDWR, 0666);
+        if (m_shm_fd >= 0) {
             return create_shm(false);
         } else {
-            LOG_ERROR("ShmCreator: open failed, shm_fd_ = %d", shm_fd_);
+            LOG_ERROR("ShmCreator: open failed, m_shm_fd = %d", m_shm_fd);
         }
     }
     return false;
@@ -89,9 +89,9 @@ bool ShmCreator<T>::open(bool create) {
 template<typename T>
 void ShmCreator<T>::delete_shm() {
 #if defined(__linux__)
-    if (is_owner_) {
+    if (m_is_owner) {
         close();
-        shm_unlink(shm_name_.c_str());
+        shm_unlink(m_shm_name.c_str());
     }
 #endif
 }
@@ -99,27 +99,27 @@ void ShmCreator<T>::delete_shm() {
 template<typename T>
 void ShmCreator<T>::close() {
 #if defined(__linux__)
-    if (shm_ptr_) {
-        munmap(static_cast<void*>(shm_ptr_), total_size_);
-        shm_ptr_ = NULL;
+    if (m_shm_ptr) {
+        munmap(static_cast<void*>(m_shm_ptr), m_total_size);
+        m_shm_ptr = NULL;
     }
-    if (shm_fd_ >= 0) {
-        ::close(shm_fd_);
-        shm_fd_ = -1;
+    if (m_shm_fd >= 0) {
+        ::close(m_shm_fd);
+        m_shm_fd = -1;
     }
 #else
-    shm_ptr_ = NULL;
-    shm_fd_ = -1;
+    m_shm_ptr = NULL;
+    m_shm_fd = -1;
 #endif
-    LOG_DEBUG("ShmCreator: close success, shm_name_ = %s", shm_name_.c_str());
+    LOG_DEBUG("ShmCreator: close success, m_shm_name = %s", m_shm_name.c_str());
 }
 
 template<typename T>
 bool ShmCreator<T>::valid() const {
-    return static_cast<void*>(shm_ptr_) && static_cast<void*>(shm_ptr_) != MAP_FAILED;
+    return static_cast<void*>(m_shm_ptr) && static_cast<void*>(m_shm_ptr) != MAP_FAILED;
 }
 
 template<typename T>
 std::string ShmCreator<T>::get_shm_name() {
-    return shm_name_;
+    return m_shm_name;
 }

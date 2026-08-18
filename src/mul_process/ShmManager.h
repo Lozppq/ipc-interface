@@ -25,9 +25,9 @@ namespace MulProcess {
 
 // 共享内存名称与收发进程 OS pid 映射；sender_pid==0 表示多个发送者
 typedef struct {
-    std::string shm_name;      // 共享内存名称
-    uint32_t sender_pid;       // 发送者 pid，0 表示多个发送者
-    uint32_t receiver_pid;     // 接收者 pid
+    std::string m_shm_name;      // 共享内存名称
+    uint32_t m_sender_pid;       // 发送者 pid，0 表示多个发送者
+    uint32_t m_receiver_pid;     // 接收者 pid
 } PidNameInfo;
 
 class ShmManager : public Model::MessageThread {
@@ -228,18 +228,18 @@ private:
     void storeReceiveWorks(std::shared_ptr<ReceiveWorkMap> m);
 
     // 无锁快照：单写（本线程）多读（业务 send）
-    std::shared_ptr<const ShmInfoMap> shm_infos_;
-    std::shared_ptr<const SendWorkMap> send_works_;
-    std::shared_ptr<const ReceiveWorkMap> receive_works_;
+    std::shared_ptr<const ShmInfoMap> m_shm_infos;
+    std::shared_ptr<const SendWorkMap> m_send_works;
+    std::shared_ptr<const ReceiveWorkMap> m_receive_works;
 
-    std::string shm_name_;  // 本进程的消息接口名称
+    std::string m_shm_name;  // 本进程的消息接口名称
     // 接收消息线程对象
-    ReceiveWork* receive_work_{NULL};
+    ReceiveWork* m_receive_work{NULL};
     // 默认发送消息线程
-    std::shared_ptr<SendWork> send_work_;
+    std::shared_ptr<SendWork> m_send_work;
     // 初始化进程id与消息接口名称映射
-    std::vector<PidNameInfo> pidNameInfos_;
-    ReceiveHandler receive_handler_{NULL};
+    std::vector<PidNameInfo> m_pidNameInfos;
+    ReceiveHandler m_receive_handler{NULL};
 };
 
 } // namespace MulProcess

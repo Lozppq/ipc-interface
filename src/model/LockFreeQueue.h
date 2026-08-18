@@ -73,8 +73,8 @@ private:
      * @brief 节点结构，包含数据和提交标志位
      */
     struct Node {
-        T data;
-        std::atomic<bool> committed{false}; // 标记数据是否已写入完成
+        T m_data;
+        std::atomic<bool> m_committed{false}; // 标记数据是否已写入完成
     };
 
     /**
@@ -84,11 +84,11 @@ private:
      */
     static size_t roundUpToPowerOf2(size_t n);
 
-    Node* buffer_;           // 环形缓冲区
-    const size_t capacity_;  // 队列容量（2的幂次）
-    const size_t mask_;      // 索引掩码，用于快速取模
-    std::atomic<size_t> head_{0};   // 队头指针（出队位置）
-    std::atomic<size_t> tail_{0};   // 队尾指针（入队位置）
+    Node* m_buffer;           // 环形缓冲区
+    const size_t m_capacity;  // 队列容量（2的幂次）
+    const size_t m_mask;      // 索引掩码，用于快速取模
+    std::atomic<size_t> m_head{0};   // 队头指针（出队位置）
+    std::atomic<size_t> m_tail{0};   // 队尾指针（入队位置）
 };
 
 #include "LockFreeQueue.inl"

@@ -34,7 +34,7 @@ void ProcessManager::OnThreadInit() {
 }
 
 void ProcessManager::setCreateProcessCallback(CreateProcessCallback callback) {
-    create_process_callback_ = callback;
+    m_create_process_callback = callback;
 }
 
 void ProcessManager::initCreateProcess() {
@@ -51,9 +51,9 @@ void ProcessManager::createProcess(std::string shm_name, std::string process_exe
     if (isAllowCreateProcess(shm_name)) {
         uint32_t pid = startProcess(process_executable_name);
         if (pid > 0) {
-            process_infos_.push_back({shm_name, process_executable_name, pid});
-            if (create_process_callback_) {
-                create_process_callback_(shm_name, pid);
+            m_process_infos.push_back({shm_name, process_executable_name, pid});
+            if (m_create_process_callback) {
+                m_create_process_callback(shm_name, pid);
             }
             LOG_DEBUG("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
         } else {
@@ -71,7 +71,7 @@ void ProcessManager::createProcess(std::string shm_name, std::string process_exe
 }
 
 bool ProcessManager::isAllowCreateProcess(const std::string& shm_name) {
-    if (!process_sync_shm_creator_ || !process_sync_shm_creator_->get_shm_ptr()) {
+    if (!m_process_sync_shm_creator || !m_process_sync_shm_creator->get_shm_ptr()) {
         return false;
     }
     uint32_t fd = Define::INVALID_FD;
@@ -84,15 +84,15 @@ bool ProcessManager::isAllowCreateProcess(const std::string& shm_name) {
     if (fd >= Define::kShmNameCount) {
         return false;
     }
-    return process_sync_shm_creator_->get_shm_ptr()->flags[fd].load(std::memory_order_acquire)
+    return m_process_sync_shm_creator->get_shm_ptr()->m_flags[fd].load(std::memory_order_acquire)
         == Define::PROCESS_SYNC_FLAG_DONE;
 }
 
 bool ProcessManager::isNeedActivePullProcess(uint32_t pid) {
-    auto it = std::find_if(process_infos_.begin(), process_infos_.end(), [pid](const ProcessInfo& process_info) {
-        return process_info.pid == pid;
+    auto it = std::find_if(m_process_infos.begin(), m_process_infos.end(), [pid](const ProcessInfo& process_info) {
+        return process_info.m_pid == pid;
     });
-    if (it != process_infos_.end()) {
+    if (it != m_process_infos.end()) {
         return true;
     }
     return false;
@@ -119,14 +119,14 @@ uint32_t ProcessManager::startProcess(const std::string& process_executable_name
 
 void ProcessManager::handleProcessCrash(uint32_t pid) {
     // 先找到process_infos_中pid对应的ProcessInfo
-    auto it = std::find_if(process_infos_.begin(), process_infos_.end(), [pid](const ProcessInfo& process_info) {
-        return process_info.pid == pid;
+    auto it = std::find_if(m_process_infos.begin(), m_process_infos.end(), [pid](const ProcessInfo& process_info) {
+        return process_info.m_pid == pid;
     });
-    if (it != process_infos_.end()) {
+    if (it != m_process_infos.end()) {
         // 如果找到，则重新创建进程，并把原来的记录删除
-        std::string shm_name = std::move(it->shm_name);
-        std::string process_executable_name = std::move(it->process_executable_name);
-        process_infos_.erase(it);
+        std::string shm_name = std::move(it->m_shm_name);
+        std::string process_executable_name = std::move(it->m_process_executable_name);
+        m_process_infos.erase(it);
         createProcess(shm_name, process_executable_name);
     } else {
         LOG_ERROR("ProcessManager: process not found, pid: %d", pid);
@@ -141,15 +141,15 @@ void ProcessManager::postHandleProcessCrash(uint32_t pid) {
 }
 
 void ProcessManager::initProcessSyncShm() {
-    process_sync_shm_creator_ = std::make_shared<Model::ShmCreator<Define::ProcessSyncInfo>>(Define::ProcessSyncShmName, sizeof(Define::ProcessSyncInfo));
-    if (process_sync_shm_creator_ && process_sync_shm_creator_->open(true) && process_sync_shm_creator_->get_shm_ptr()) {
+    m_process_sync_shm_creator = std::make_shared<Model::ShmCreator<Define::ProcessSyncInfo>>(Define::ProcessSyncShmName, sizeof(Define::ProcessSyncInfo));
+    if (m_process_sync_shm_creator && m_process_sync_shm_creator->open(true) && m_process_sync_shm_creator->get_shm_ptr()) {
         LOG_DEBUG("ProcessManager: init process sync shm success, shm_name: %s", Define::ProcessSyncShmName);
-        auto process_sync_info = process_sync_shm_creator_->get_shm_ptr();
+        auto process_sync_info = m_process_sync_shm_creator->get_shm_ptr();
 
         // 暂无全部按已同步处理；后续可按槽位 flags[Daemon_Fd/ProcessN_Fd] 分别置位
         // bootstrap 占位：上述循环非真实 per-slot 握手，仅为启动阶段允许 createProcess
         for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
-            process_sync_info->flags[i].store(Define::PROCESS_SYNC_FLAG_DONE, std::memory_order_release);
+            process_sync_info->m_flags[i].store(Define::PROCESS_SYNC_FLAG_DONE, std::memory_order_release);
         }
     } else {
         LOG_ERROR("ProcessManager: init process sync shm failed, shm_name: %s", Define::ProcessSyncShmName);

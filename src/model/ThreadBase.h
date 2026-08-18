@@ -60,6 +60,11 @@ protected:
      * @brief 线程初始化钩子，在线程启动后、Run()执行前调用
      */
     virtual void OnThreadInit() {}
+
+    /**
+     * @brief 线程退出钩子，在线程退出前调用
+     */
+    virtual void OnThreadExit() {}
     
     /**
      * @brief 线程主循环函数，派生类必须实现
@@ -79,10 +84,10 @@ private:
     void threadFunc();
     void applyThreadName();
 
-    std::thread thread_;
-    std::thread::id worker_thread_id_;
-    std::atomic<bool> running_{false};
-    std::string thread_name_;
+    std::thread m_thread;
+    std::thread::id m_worker_thread_id;
+    std::atomic<bool> m_running{false};
+    std::string m_thread_name;
 };
 
 } // namespace Model

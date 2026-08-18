@@ -14,63 +14,64 @@
 namespace IpcInterface {
 namespace Model {
 
-ThreadBase::ThreadBase(std::string name) : thread_name_(std::move(name)) {}
+ThreadBase::ThreadBase(std::string name) : m_thread_name(std::move(name)) {}
 
 ThreadBase::~ThreadBase() {
     stop();
 }
 
 void ThreadBase::applyThreadName() {
-    if (thread_name_.empty()) {
+    if (m_thread_name.empty()) {
         return;
     }
 #if defined(__linux__)
-    pthread_setname_np(pthread_self(), thread_name_.substr(0, 15).c_str());
+    pthread_setname_np(pthread_self(), m_thread_name.substr(0, 15).c_str());
 #endif
 }
 
 void ThreadBase::start() {
     // 双重检查，避免重复启动
-    if (!running_.load(std::memory_order_acquire)) {
-        running_.store(true, std::memory_order_release);
-        thread_ = std::thread(&ThreadBase::threadFunc, this);
+    if (!m_running.load(std::memory_order_acquire)) {
+        m_running.store(true, std::memory_order_release);
+        m_thread = std::thread(&ThreadBase::threadFunc, this);
     }
 }
 
 void ThreadBase::stop() {
     // 设置停止标志，等待线程退出
-    if (running_.load(std::memory_order_acquire)) {
+    if (m_running.load(std::memory_order_acquire)) {
         setRunning(false);
         wait();
     }
 }
 
 bool ThreadBase::isRunning() const {
-    return running_.load(std::memory_order_acquire);
+    return m_running.load(std::memory_order_acquire);
 }
 
 void ThreadBase::setRunning(bool running) {
-    running_.store(running, std::memory_order_release);
+    m_running.store(running, std::memory_order_release);
 }
 
 void ThreadBase::wait() {
-    if (thread_.joinable()) {
-        thread_.join();
+    if (m_thread.joinable()) {
+        m_thread.join();
     }
 }
 
 bool ThreadBase::isInWorkerThread() const {
-    return std::this_thread::get_id() == worker_thread_id_;
+    return std::this_thread::get_id() == m_worker_thread_id;
 }
 
 void ThreadBase::threadFunc() {
-    worker_thread_id_ = std::this_thread::get_id();
+    m_worker_thread_id = std::this_thread::get_id();
     applyThreadName();
     OnThreadInit();
-    // 循环执行 Run()，直到 running_ 被设置为 false
+    // 循环执行 Run()，直到 m_running 被设置为 false
     while (isRunning()) {
         Run();
     }
+    OnThreadExit();
 }
 
 } // namespace Model

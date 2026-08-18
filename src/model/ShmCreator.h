@@ -74,11 +74,11 @@ private:
 
 
 protected:
-    uint32_t total_size_;
-    T* shm_ptr_;
-    int shm_fd_;
-    bool is_owner_;
-    std::string shm_name_;
+    uint32_t m_total_size;
+    T* m_shm_ptr;
+    int m_shm_fd;
+    bool m_is_owner;
+    std::string m_shm_name;
 };
 
 #include "ShmCreator.inl"

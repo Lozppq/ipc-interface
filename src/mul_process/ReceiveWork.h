@@ -32,8 +32,8 @@ protected:
     void ReceiveMessage();
 
 private:
-    std::shared_ptr<StreamShmCreator> shm_;
-    ReceiveHandler receive_handler_;
+    std::shared_ptr<StreamShmCreator> m_shm;
+    ReceiveHandler m_receive_handler;
 };
 
 } // namespace MulProcess

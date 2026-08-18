@@ -30,10 +30,10 @@ int main() {
 
     mgr->setReceiveHandler([&recv_bytes](std::shared_ptr<IpcInterface::MulProcess::TagReceiveMessage> tag) {
         if (!tag) return;
-        const auto& data = tag->data;
+        const auto& data = tag->m_data;
         recv_bytes.fetch_add(data.size(), std::memory_order_relaxed);
         if (data.size() < sizeof(uint16_t) || (data.size() % sizeof(uint16_t)) != 0) {
-            LOG_ERROR("recv bad size=%zu message_id=%u", data.size(), tag->message_id);
+            LOG_ERROR("recv bad size=%zu message_id=%u", data.size(), tag->m_message_id);
             return;
         }
         const auto* p = reinterpret_cast<const uint16_t*>(data.data());
@@ -41,13 +41,13 @@ int main() {
         const size_t expect = (1u + n) * sizeof(uint16_t);
         if (n < 1 || n > 1000 || data.size() != expect) {
             LOG_ERROR("recv bad n=%u size=%zu expect=%zu message_id=%u",
-                      n, data.size(), expect, tag->message_id);
+                      n, data.size(), expect, tag->m_message_id);
             return;
         }
         for (uint16_t i = 1; i <= n; ++i) {
             if (p[i] != i) {
                 LOG_ERROR("recv bad seq at i=%u got=%u n=%u message_id=%u",
-                          i, p[i], n, tag->message_id);
+                          i, p[i], n, tag->m_message_id);
                 return;
             }
         }

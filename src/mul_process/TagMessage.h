@@ -20,15 +20,15 @@ class StreamShmCreator;
 #endif
 
 struct TagSendMessage {
-    std::vector<uint8_t> data;
-    uint16_t message_id{0};
-    std::shared_ptr<StreamShmCreator> shm;
-    uint32_t retry_count{0};
+    std::vector<uint8_t> m_data;
+    uint16_t m_message_id{0};
+    std::shared_ptr<StreamShmCreator> m_shm;
+    uint32_t m_retry_count{0};
 };
 
 struct TagReceiveMessage {
-    std::vector<uint8_t> data;
-    uint16_t message_id{0};
+    std::vector<uint8_t> m_data;
+    uint16_t m_message_id{0};
 };
 
 using ReceiveHandler = std::function<void(std::shared_ptr<TagReceiveMessage>)>;

@@ -10,9 +10,9 @@ namespace MulProcess {
 
 // 进程信息
 typedef struct {
-    std::string shm_name;  // 共享内存名称
-    std::string process_executable_name;  // 进程可执行文件名称
-    uint32_t pid;  // 进程id
+    std::string m_shm_name;  // 共享内存名称
+    std::string m_process_executable_name;  // 进程可执行文件名称
+    uint32_t m_pid;  // 进程id
 } ProcessInfo;
 
 class ProcessManager : public Model::MessageThread {
@@ -92,10 +92,10 @@ protected:
 
 
 private:
-    CreateProcessCallback create_process_callback_;
-    std::vector<ProcessInfo> process_infos_;
+    CreateProcessCallback m_create_process_callback;
+    std::vector<ProcessInfo> m_process_infos;
     // 进程同步信息共享内存
-    std::shared_ptr<Model::ShmCreator<Define::ProcessSyncInfo>> process_sync_shm_creator_;
+    std::shared_ptr<Model::ShmCreator<Define::ProcessSyncInfo>> m_process_sync_shm_creator;
 };
 
 

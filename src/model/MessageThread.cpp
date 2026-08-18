@@ -2,214 +2,169 @@
  * @file MessageThread.cpp
  * @brief 消息线程实现
  * @details 实现消息投递、一次性定时器、周期性定时器功能。
- * 事件循环通过 eventfd+poll 等待，无定时器时无限阻塞，有定时器时带超时等待，
+ * 事件循环通过 EventHandle（eventfd+poll）等待，无定时器时无限阻塞，有定时器时带超时等待，
  * 所有定时器操作通过任务队列传递到工作线程，避免并发访问风险。
  */
 
 #include "MessageThread.h"
 #include "../log/Log_Print.h"
-#if defined(__linux__)
-#include <sys/eventfd.h>
-#include <poll.h>
-#include <unistd.h>
-#include <cstdint>
-#endif
 
 namespace IpcInterface {
 namespace Model {
 
-
-void MessageThread::wake(int efd) {
-#if defined(__linux__)
-    uint64_t one = 1;
-    ssize_t n = write(efd, &one, sizeof(one));
-    (void)n;
-#else
-    (void)efd;
-#endif
-}
-
-void MessageThread::drain(int efd) {
-#if defined(__linux__)
-    uint64_t cnt;
-    ssize_t n = read(efd, &cnt, sizeof(cnt));
-    (void)n;
-#else
-    (void)efd;
-#endif
-}
-
-
 MessageThread::MessageThread(size_t queue_size, std::string name)
-    : ThreadBase(std::move(name)), queue_(queue_size) {
-#if defined(__linux__)
-    efd_ = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-#endif
-    timer_ids_.store(0, std::memory_order_release);
+    : ThreadBase(std::move(name)), m_queue(queue_size) {
+    m_timer_ids.store(1, std::memory_order_release);
 }
 
 MessageThread::~MessageThread() {
     stop();
-#if defined(__linux__)
-    if (efd_ >= 0) close(efd_);
-#endif
 }
 
 void MessageThread::stop() {
     setRunning(false);
-#if defined(__linux__)
-    wake(efd_);
-#endif
+    m_event.wake();
     wait();
 }
 
 void MessageThread::OnThreadInit() {}
 
 void MessageThread::post(std::function<void()> task) {
-    if (queue_.push(task)) {
-#if defined(__linux__)
-        wake(efd_);
-#endif
+    if (m_queue.push(task)) {
+        m_event.wake();
     } else {
         LOG_ERROR("MessageThread::post queue full, drop task");
     }
 }
 
-uint32_t MessageThread::postTimer(int delay_ms, std::function<void()> callback) {
-    auto timer_id = timer_ids_.fetch_add(1, std::memory_order_relaxed);
+void MessageThread::postTimer(int delay_ms, std::function<void()> callback) {
     auto delay = std::chrono::milliseconds(delay_ms);
     if (isInWorkerThread()) {
-        timers_.insert({
-            timer_id,
+        m_timers.insert({
+            0,
             std::chrono::steady_clock::now() + delay,
             delay,
             std::move(callback),
             false
         });
-#if defined(__linux__)
-        wake(efd_);
-#endif
+        m_event.wake();
     } else {
-#if defined(__linux__)
-        if (!queue_.push([this, timer_id, delay, cb = std::move(callback)]() {
-            timers_.insert({
-                timer_id,
+        if (!m_queue.push([this, delay, cb = std::move(callback)]() {
+            m_timers.insert({
+                0,
                 std::chrono::steady_clock::now() + delay,
                 delay,
                 std::move(cb),
                 false
             });
         })) {
-            LOG_ERROR("MessageThread::postTimer queue full, drop timer id=%u", timer_id);
+            LOG_ERROR("MessageThread::postTimer queue full, drop timer");
         } else {
-            wake(efd_);
+            m_event.wake();
         }
-#else
-        if (!queue_.push([this, timer_id, delay, cb = std::move(callback)]() {
-            timers_.insert({
-                timer_id,
-                std::chrono::steady_clock::now() + delay,
-                delay,
-                std::move(cb),
-                false
-            });
-        })) {
-            LOG_ERROR("MessageThread::postTimer queue full, drop timer id=%u", timer_id);
-        }
-#endif
     }
-    return timer_id;
 }
 
-uint32_t MessageThread::startTimer(int interval_ms, std::function<void()> callback) {
-    auto timer_id = timer_ids_.fetch_add(1, std::memory_order_relaxed);
+uint32_t MessageThread::startTimer(int interval_ms, std::function<void()> callback, bool periodic) {
+    uint32_t timer_id = 0;
     auto interval = std::chrono::milliseconds(interval_ms);
     if (isInWorkerThread()) {
-        timers_.insert({
+        if (m_recycled_timer_ids.empty()) {
+            timer_id = m_timer_ids.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            timer_id = m_recycled_timer_ids.back();
+            m_recycled_timer_ids.pop_back();
+        }
+        m_timers.insert({
             timer_id,
             std::chrono::steady_clock::now() + interval,
             interval,
             std::move(callback),
-            true
+            periodic
         });
-#if defined(__linux__)
-        wake(efd_);
-#endif
+        m_event.wake();
     } else {
-        if (!queue_.push([this, timer_id, interval, cb = std::move(callback)]() {
-            timers_.insert({
+        // 如果不在工作线程，则将定时器添加到任务队列中，等待返回timer_id
+        EventHandle t_event;
+        if (!m_queue.push([this, &t_event, &timer_id, interval, periodic, cb = std::move(callback)]() {
+            if (m_recycled_timer_ids.empty()) {
+                timer_id = m_timer_ids.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                timer_id = m_recycled_timer_ids.back();
+                m_recycled_timer_ids.pop_back();
+            }
+            m_timers.insert({
                 timer_id,
                 std::chrono::steady_clock::now() + interval,
                 interval,
                 std::move(cb),
-                true
+                periodic
             });
+            t_event.wake();
         })) {
             LOG_ERROR("MessageThread::startTimer queue full, drop timer id=%u", timer_id);
+        } else {
+            m_event.wake();
+            t_event.wait(-1); // 阻塞等待timer_id返回
         }
-#if defined(__linux__)
-        else {
-            wake(efd_);
-        }
-#endif
     }
     return timer_id;
 }
 
 void MessageThread::stopTimer(uint32_t timer_id) {
-    auto do_stop = [this, timer_id]() {
-        for (auto it = timers_.begin(); it != timers_.end(); ++it) {
-            if (it->id == timer_id) {
-                timers_.erase(it);
+    if (isInWorkerThread()) {
+        for (auto it = m_timers.begin(); it != m_timers.end(); ++it) {
+            if (it->m_id == timer_id) {
+                m_recycled_timer_ids.push_back(timer_id);
+                m_timers.erase(it);
                 break;
             }
         }
-    };
-    if (isInWorkerThread()) {
-        do_stop();
     } else {
-        if (!queue_.push(std::move(do_stop))) {
+        if (!m_queue.push([this, timer_id]() {
+            for (auto it = m_timers.begin(); it != m_timers.end(); ++it) {
+                if (it->m_id == timer_id) {
+                    m_recycled_timer_ids.push_back(timer_id);
+                    m_timers.erase(it);
+                    break;
+                }
+            }
+        })) {
             LOG_ERROR("MessageThread::stopTimer queue full, drop stop id=%u", timer_id);
+        } else {
+            m_event.wake();
         }
-#if defined(__linux__)
-        else {
-            wake(efd_);
-        }
-#endif
     }
 }
 
 void MessageThread::Run() {
     while (isRunning()) {
         auto now = std::chrono::steady_clock::now();
-#if defined(__linux__)
         int timeout_ms = -1;
-        if (!timers_.empty()) {
+        if (!m_timers.empty()) {
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                timers_.begin()->expiry - now).count();
+                m_timers.begin()->m_expiry - now).count();
             timeout_ms = ms > 0 ? static_cast<int>(ms) : 0;
         }
-        pollfd pfd{efd_, POLLIN, 0};
-        poll(&pfd, 1, timeout_ms);
-        if (pfd.revents & POLLIN) drain(efd_);
-#endif
+        m_event.wait(timeout_ms);
 
         std::function<void()> task;
         now = std::chrono::steady_clock::now();
-        while (!queue_.isEmpty() || (!timers_.empty() && timers_.begin()->expiry <= now)) {
-            if (queue_.pop(task)) {
+        while (!m_queue.isEmpty() || (!m_timers.empty() && m_timers.begin()->m_expiry <= now)) {
+            while (m_queue.pop(task)) { // 先清空任务队列再处理定时器，避免外部投递定时器时，定时器已经被stop
                 task();
             }
 
             now = std::chrono::steady_clock::now();
-            if (!timers_.empty() && timers_.begin()->expiry <= now) {
-                Timer timer = *timers_.begin();
-                timers_.erase(timers_.begin());
-                timer.callback();
-                if (timer.periodic && isRunning()) {
-                    timer.expiry = now + timer.interval;
-                    timers_.insert(std::move(timer));
+            if (!m_timers.empty() && m_timers.begin()->m_expiry <= now) {
+                Timer timer = *m_timers.begin();
+                m_timers.erase(m_timers.begin());
+                timer.m_callback();
+                if (timer.m_periodic && isRunning()) {
+                    timer.m_expiry = now + timer.m_interval;
+                    m_timers.insert(std::move(timer));
                 }
+                now = std::chrono::steady_clock::now();
             }
         }
     }
