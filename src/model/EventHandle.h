@@ -24,7 +24,11 @@ public:
 
     void wake();
     uint64_t wait(int timeout_ms);
-    void close();
+    uint64_t read();
+    void Close();
+    bool Open();
+    int getFd() const;
+    bool isValid() const;
 
 private:
     int m_fd{-1};

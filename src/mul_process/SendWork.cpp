@@ -59,7 +59,7 @@ void SendWork::SendMessage(const std::shared_ptr<TagSendMessage>& tag) {
         return;
     }
     if (tag->m_retry_count <= kSendMaxRetry) {
-        postTimer(1, [this, tag]() {
+        postTimer(1, [this, tag](int) {
             SendMessage(tag);
         });
     } else {

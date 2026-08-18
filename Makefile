@@ -32,6 +32,9 @@ LDLIBS   := -lrt -lpthread
 LIB_SRCS := \
 	src/model/ThreadBase.cpp \
 	src/model/EventHandle.cpp \
+	src/model/EpollHandle.cpp \
+	src/model/TimerHandle.cpp \
+	src/model/EpollControl.cpp \
 	src/model/MessageThread.cpp \
 	src/mul_process/ShmManager.cpp \
 	src/mul_process/StreamShmCreator.cpp \

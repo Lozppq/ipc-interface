@@ -36,13 +36,13 @@ void ReceiveWork::stop() {
 
 void ReceiveWork::ReceiveMessage() {
     if (!isRunning() || !m_shm || !m_receive_handler) {
-        postTimer(1000, [this]() { ReceiveMessage(); });
+        postTimer(1000, [this](int) { ReceiveMessage(); });
         return;
     }
     auto buf_msg = std::make_shared<TagReceiveMessage>();
     uint32_t n = m_shm->recv(buf_msg);
     if (!isRunning()) {
-        postTimer(1000, [this]() { ReceiveMessage(); });
+        postTimer(1000, [this](int) { ReceiveMessage(); });
         return;
     }
     if (n > 0) {
@@ -51,7 +51,7 @@ void ReceiveWork::ReceiveMessage() {
         return;
     }
     // shm 未就绪 / BIT1 关闭 / 超时丢弃：退避再试，禁止 0 周期空转刷屏
-    postTimer(1000, [this]() { ReceiveMessage(); });
+    postTimer(1000, [this](int) { ReceiveMessage(); });
 }
 
 void ReceiveWork::OnThreadInit() {
