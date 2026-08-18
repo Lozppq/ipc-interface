@@ -25,6 +25,11 @@ void MessageThread::stop() {
     setRunning(false);
     m_event.wake();
     wait();
+    m_recycled_timer_ids.clear();
+    m_timers.clear();
+    m_timer_ids.store(1, std::memory_order_release);
+    m_event.close();
+    m_queue.clear();
 }
 
 void MessageThread::post(std::function<void()> task) {

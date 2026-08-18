@@ -68,6 +68,11 @@ public:
      */
     size_t size() const;
 
+    /**
+     * @brief 清空队列
+     */
+    void clear();
+
 private:
     /**
      * @brief 节点结构，包含数据和提交标志位

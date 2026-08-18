@@ -123,3 +123,12 @@ size_t LockFreeQueue<T>::size() const {
     size_t tail = m_tail.load(std::memory_order_acquire);
     return (tail - head) & m_mask;
 }
+
+template<typename T>
+void LockFreeQueue<T>::clear() {
+    m_head.store(0, std::memory_order_release);
+    m_tail.store(0, std::memory_order_release);
+    for (size_t i = 0; i < m_capacity; ++i) {
+        m_buffer[i].m_committed.store(false, std::memory_order_release);
+    }
+}
