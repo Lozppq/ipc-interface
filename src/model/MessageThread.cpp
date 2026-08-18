@@ -27,8 +27,6 @@ void MessageThread::stop() {
     wait();
 }
 
-void MessageThread::OnThreadInit() {}
-
 void MessageThread::post(std::function<void()> task) {
     if (m_queue.push(task)) {
         m_event.wake();

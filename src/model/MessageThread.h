@@ -68,7 +68,6 @@ public:
     void stop() override;
 
 protected:
-    void OnThreadInit() override;
     void Run() override;
 
 private:
