@@ -58,13 +58,13 @@ void ProcessManager::createProcess(std::string shm_name, std::string process_exe
             LOG_DEBUG("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
         } else {
             LOG_ERROR("ProcessManager: failed, shm_name: %s, process_executable_name: %s, pid: %d", shm_name.c_str(), process_executable_name.c_str(), pid);
-            postTimer(100, [this, shm_name = std::move(shm_name), process_executable_name = std::move(process_executable_name)](int) {
+            postTimer(100, [this, shm_name = std::move(shm_name), process_executable_name = std::move(process_executable_name)](int) mutable {
                 createProcess(std::move(shm_name), std::move(process_executable_name));
             });
         }
     } else {
         LOG_DEBUG("ProcessManager: not allow create process, shm_name: %s", shm_name.c_str());
-        postTimer(100, [this, shm_name = std::move(shm_name), process_executable_name = std::move(process_executable_name)](int) {
+        postTimer(100, [this, shm_name = std::move(shm_name), process_executable_name = std::move(process_executable_name)](int) mutable {
             createProcess(std::move(shm_name), std::move(process_executable_name));
         });
     }

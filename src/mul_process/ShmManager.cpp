@@ -204,7 +204,7 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
         LOG_ERROR("ShmManager: openStreamShmRetry failed, name=%s, sender_pid=%u, receiver_pid=%u",
             info.m_shm_name.c_str(), info.m_sender_pid, info.m_receiver_pid);
         shm->close();
-        postTimer(100, [this, info = std::move(info), create](int) {
+        postTimer(100, [this, info = std::move(info), create](int) mutable {
             openStreamShmRetry(std::move(info), create);
         });
     }
@@ -751,7 +751,7 @@ void ShmManager::createReceiveWork(std::string shm_name, ReceiveHandler receive_
     }
     auto shms = std::atomic_load(&m_shm_infos);
     if (!shms || shms->find(shm_name) == shms->end() || !shms->at(shm_name)) {
-        postTimer(100, [this, shm_name = std::move(shm_name), receive_handler = std::move(receive_handler)](int) {
+        postTimer(100, [this, shm_name = std::move(shm_name), receive_handler = std::move(receive_handler)](int) mutable {
             createReceiveWork(std::move(shm_name), std::move(receive_handler));
         });
         return;
@@ -770,7 +770,7 @@ void ShmManager::createSendWork(std::string shm_name) {
     }
     auto shms = std::atomic_load(&m_shm_infos);
     if (!shms || shms->find(shm_name) == shms->end() || !shms->at(shm_name)) {
-        postTimer(100, [this, shm_name = std::move(shm_name)](int) {
+        postTimer(100, [this, shm_name = std::move(shm_name)](int) mutable {
             createSendWork(std::move(shm_name));
         });
         return;
@@ -795,13 +795,13 @@ void ShmManager::postRequestReleaseShm(std::string shm_name) {
 }
 
 void ShmManager::postCreateReceiveWork(std::string shm_name, ReceiveHandler receive_handler) {
-    post([this, shm_name = std::move(shm_name), receive_handler = std::move(receive_handler)]() {
+    post([this, shm_name = std::move(shm_name), receive_handler = std::move(receive_handler)]() mutable {
         createReceiveWork(std::move(shm_name), std::move(receive_handler));
     });
 }
 
 void ShmManager::postCreateSendWork(std::string shm_name) {
-    post([this, shm_name = std::move(shm_name)]() {
+    post([this, shm_name = std::move(shm_name)]() mutable {
         createSendWork(std::move(shm_name));
     });
 }
