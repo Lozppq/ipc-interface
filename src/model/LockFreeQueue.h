@@ -89,6 +89,11 @@ private:
      */
     static size_t roundUpToPowerOf2(size_t n);
 
+    /**
+     * @brief 等待槽位上次消费完成（committed 为 false）后再允许写入
+     */
+    void waitSlotWritable(size_t idx);
+
     Node* m_buffer;           // 环形缓冲区
     const size_t m_capacity;  // 队列容量（2的幂次）
     const size_t m_mask;      // 索引掩码，用于快速取模

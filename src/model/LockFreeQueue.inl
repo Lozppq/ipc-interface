@@ -16,6 +16,18 @@ size_t LockFreeQueue<T>::roundUpToPowerOf2(size_t n) {
 }
 
 template<typename T>
+void LockFreeQueue<T>::waitSlotWritable(size_t idx)
+{
+    bool slotBusy = m_buffer[idx].m_committed.load(std::memory_order_acquire);
+    // WHY: pop 先 CAS 推进 head，随后才 move/清 committed；满队列环绕时
+    // 生产者已可复用同槽，必须等消费者读完再写，避免并发 move 同一 T
+    while (slotBusy)
+    {
+        slotBusy = m_buffer[idx].m_committed.load(std::memory_order_acquire);
+    }
+}
+
+template<typename T>
 LockFreeQueue<T>::LockFreeQueue(size_t capacity)
     : m_buffer(new Node[roundUpToPowerOf2(capacity)]),
       m_capacity(roundUpToPowerOf2(capacity)),
@@ -48,6 +60,7 @@ bool LockFreeQueue<T>::push(const T& item) {
     
     // 计算环形索引，写入数据后标记已提交
     size_t idx = tail & m_mask;
+    waitSlotWritable(idx);
     m_buffer[idx].m_data = item;
     m_buffer[idx].m_committed.store(true, std::memory_order_release);
     return true;
@@ -71,6 +84,7 @@ bool LockFreeQueue<T>::push(T&& item) {
     }
     
     size_t idx = tail & m_mask;
+    waitSlotWritable(idx);
     m_buffer[idx].m_data = std::move(item);
     m_buffer[idx].m_committed.store(true, std::memory_order_release);
     return true;
