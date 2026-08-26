@@ -56,6 +56,11 @@ public:
     */
     void postHandleProcessCrash(uint32_t pid);
 
+    /**
+     * @brief 根据传入的逻辑进程id，设置同步标志
+    */
+    void setProcessSyncFlag(uint8_t logic_id, uint8_t flag);
+
 protected:
     /**
      * @brief 处理进程崩溃共享内存的重置

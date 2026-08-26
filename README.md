@@ -237,8 +237,48 @@ mgr->postRequestReleaseShm("/ipc_dyn_p1_to_p2");
 3. 枚举增加 `ProcessN_Fd`
 4. 如有对应别名常量（`ProcessN`）一并补上
 5. 在 `demo/` 增加 `process_N.cpp`，`make` 后产物为 `build/bin/process_N`
+6. `kProcessSyncFlagInitValues` 增加对应初值（见下节）
 
 编译期 `static_assert` 会检查槽位与表长度是否一致。
+
+### 进程同步（`Common.h`）
+
+部分业务进程要等别的进程初始化完才能拉起时，用 `/ipc_process_sync`（`ProcessSyncInfo`）做槽位级门闩。定义都在 `src/define/Common.h`。
+
+- `m_flags[Daemon_Fd / ProcessN_Fd]`：该槽是否允许 daemon 拉起对应可执行文件（**槽位枚举，不是系统 fd**）
+- `PROCESS_SYNC_FLAG_NONE`（0）：未就绪，不拉起；`PROCESS_SYNC_FLAG_DONE`（1）：允许拉起
+- `kProcessSyncFlagInitValues[]`：daemon 创建同步 shm 时的初值，下标必须与 `kShmNameCount` 一致
+- `ProcessSyncShmName`：`/ipc_process_sync`
+
+`ProcessManager` 只在 `flags[槽位] == DONE` 时 `fork/exec`；为 `NONE` 时每 100ms 重试，直到被置为 `DONE`。崩溃后重新拉起也走同一检查。
+
+**延迟拉起某个进程**：把该槽初值改成 `NONE`，依赖方就绪后再置 `DONE`。例如希望 `process_3` 等 `process_1` 初始化完再启动：
+
+```cpp
+// Common.h：process_3 初始不拉起
+constexpr uint8_t kProcessSyncFlagInitValues[] = {
+    PROCESS_SYNC_FLAG_DONE,  // Daemon
+    PROCESS_SYNC_FLAG_DONE,  // Process1
+    PROCESS_SYNC_FLAG_DONE,  // Process2
+    PROCESS_SYNC_FLAG_NONE,  // Process3，等别人置 DONE
+};
+```
+
+`process_1` 初始化完成后通知 daemon（任意线程用 `postSetSyncFlag`）：
+
+```cpp
+#include "mul_process/ShmManager.h"
+#include "define/Common.h"
+
+auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
+// 允许拉起 / 重新拉起 process_3
+mgr->postSetSyncFlag(IpcInterface::Define::Process3,
+                     IpcInterface::Define::PROCESS_SYNC_FLAG_DONE);
+```
+
+消息经 `MESSAGE_ID_DAEMON` / `MESSAGE_SUB_ID_SET_SYNC_FLAG` 到 daemon，再 `ProcessManager::setProcessSyncFlag`。也可把已在跑的槽改回 `NONE`，之后崩溃将不会被自动拉起，直到再次 `DONE`。
+
+默认四槽全是 `DONE`，与现在 demo 启动即拉起全部业务进程一致。
 
 ## 目录结构
 
@@ -261,6 +301,6 @@ Makefile
 
 - **环形队列（`StreamShmCreator`）仅支持单接收者多发送者**：一个共享内存环只允许一个接收端消费；发送端可以有多个。不支持多接收者争用同一环；若需一对多广播或扇出，应为每个接收者创建独立通道。
 - 共享内存对象在 `/dev/shm/`，名称以 `/` 开头（如 `/ipc_process_1`）
-- 同步位访问：`ProcessSyncInfo::flags[Define::Process1_Fd]`（槽位枚举，不是系统 fd）
+- 同步位访问：`ProcessSyncInfo::m_flags[Define::Process1_Fd]`（槽位枚举，不是系统 fd）；用法见上文「进程同步」
 - 槽位超时等策略见 `StreamShmCreator.h` 中 `TIMEOUT_*`
 - Windows 下仅便于浏览代码；完整功能请在 Linux / WSL 编译运行

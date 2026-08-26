@@ -106,6 +106,16 @@ typedef struct {
     std::atomic<uint8_t> m_flags[kShmNameCount];
 } ProcessSyncInfo;
 
+// 同步标志初始化值数组
+constexpr uint8_t kProcessSyncFlagInitValues[] = {
+    PROCESS_SYNC_FLAG_DONE,
+    PROCESS_SYNC_FLAG_DONE,
+    PROCESS_SYNC_FLAG_DONE,
+    PROCESS_SYNC_FLAG_DONE,
+};
+
+static_assert(sizeof(kProcessSyncFlagInitValues) == kShmNameCount, "kProcessSyncFlagInitValues must match kShmNameCount");
+
 // 进程同步结构体共享内存名称
 constexpr const char* ProcessSyncShmName = "/ipc_process_sync";
 

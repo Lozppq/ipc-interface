@@ -149,7 +149,7 @@ void ProcessManager::initProcessSyncShm() {
         // 暂无全部按已同步处理；后续可按槽位 flags[Daemon_Fd/ProcessN_Fd] 分别置位
         // bootstrap 占位：上述循环非真实 per-slot 握手，仅为启动阶段允许 createProcess
         for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
-            process_sync_info->m_flags[i].store(Define::PROCESS_SYNC_FLAG_DONE, std::memory_order_release);
+            process_sync_info->m_flags[i].store(Define::kProcessSyncFlagInitValues[i], std::memory_order_release);
         }
     } else {
         LOG_ERROR("ProcessManager: init process sync shm failed, shm_name: %s", Define::ProcessSyncShmName);
@@ -157,6 +157,16 @@ void ProcessManager::initProcessSyncShm() {
             initProcessSyncShm();
         });
     }
+}
+
+void ProcessManager::setProcessSyncFlag(uint8_t logic_id, uint8_t flag) 
+{
+    if (!m_process_sync_shm_creator || !m_process_sync_shm_creator->get_shm_ptr() || logic_id >= Define::kShmNameCount) 
+    {
+        return;
+    }
+    m_process_sync_shm_creator->get_shm_ptr()->m_flags[logic_id].store(flag, std::memory_order_release);
+    LOG_DEBUG("ProcessManager: set process sync flag success, logic_id: %d, flag: %d", logic_id, flag);
 }
 
 } // namespace MulProcess

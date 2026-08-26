@@ -19,6 +19,10 @@ int main(int argc, char* argv[]) {
             IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo(
                 {shm_name, 0, static_cast<uint32_t>(pid)});
         });
+    // 设置同步标志回调函数
+    IpcInterface::MulProcess::ShmManager::getInstance()->setSyncFlagCallback([](uint8_t logic_id, uint8_t flag) {
+        IpcInterface::MulProcess::ProcessManager::getInstance()->setProcessSyncFlag(logic_id, flag);
+    });
     IpcInterface::MulProcess::ShmManager::getInstance()->start();
     IpcInterface::MulProcess::ProcessManager::getInstance()->start();
 

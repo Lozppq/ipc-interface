@@ -30,6 +30,8 @@ typedef struct {
     uint32_t m_receiver_pid;     // 接收者 pid
 } PidNameInfo;
 
+using SyncFlagCallback = std::function<void(uint8_t logic_id, uint8_t flag)>;
+
 class ShmManager : public Model::MessageThread {
 public:
     /**
@@ -118,6 +120,16 @@ public:
     */
     void postCreateSendWork(std::string shm_name);
 
+    /**
+     * @brief 设置同步标志回调函数
+    */
+    void setSyncFlagCallback(SyncFlagCallback callback);
+
+    /**
+     * @brief 外部线程投递一次设置同步标志
+    */
+    void postSetSyncFlag(std::string shm_name, uint8_t flag);
+
 private:
     /**
      * @brief 根据共享内存名称匹配逻辑进程ID
@@ -178,6 +190,13 @@ private:
      * @param shm_name 共享内存名称
     */
     void createSendWork(std::string shm_name);
+
+    /**
+     * @brief 设置同步标志
+     * @param shm_name 共享内存名称
+     * @param flag 同步标志
+    */
+    void setSyncFlag(std::string shm_name, uint8_t flag);
 
 protected:
     void OnThreadInit() override;
@@ -242,6 +261,7 @@ private:
     // 初始化进程id与消息接口名称映射
     std::vector<PidNameInfo> m_pidNameInfos;
     ReceiveHandler m_receive_handler{NULL};
+    SyncFlagCallback m_sync_flag_callback{NULL};
 };
 
 } // namespace MulProcess

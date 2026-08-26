@@ -457,6 +457,19 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
             LOG_DEBUG("ShmManager: handleDaemonMessage ReleaseShm success, shm_name = %s", shm_name.c_str());
         }
             break;
+        case Define::MESSAGE_SUB_ID_SET_SYNC_FLAG:
+        {
+            if (!tag || tag->m_data.size() < 3) {
+                LOG_ERROR("ShmManager: SET_SYNC_FLAG truncated, size=%zu", tag ? tag->m_data.size() : 0);
+                break;
+            }
+            uint8_t logic_id = tag->m_data[2];
+            uint8_t flag = tag->m_data[3];
+            if (m_sync_flag_callback) {
+                m_sync_flag_callback(logic_id, flag);
+            }
+        }
+            break;
         default:
             break;
     }
@@ -806,6 +819,45 @@ void ShmManager::postCreateSendWork(std::string shm_name) {
     post([this, shm_name = std::move(shm_name)]() mutable {
         createSendWork(std::move(shm_name));
     });
+}
+
+void ShmManager::setSyncFlagCallback(SyncFlagCallback callback) 
+{
+    m_sync_flag_callback = callback;
+}
+
+void ShmManager::postSetSyncFlag(std::string shm_name, uint8_t flag) 
+{
+    post([this, shm_name = std::move(shm_name), flag = flag]() mutable {
+        setSyncFlag(std::move(shm_name), flag);
+    });
+}
+
+void ShmManager::setSyncFlag(std::string shm_name, uint8_t flag) 
+{
+    // 组建守护进程消息
+    std::shared_ptr<TagSendMessage> send_msg = std::make_shared<TagSendMessage>();
+    uint8_t payload_data[512] = {0};
+    uint8_t* pCur = payload_data;
+    send_msg->m_message_id = Define::MESSAGE_ID_DAEMON;
+
+    // 消息子ID
+    Standard::Small_U16ToU8(Define::MESSAGE_SUB_ID_SET_SYNC_FLAG, pCur);
+    pCur += 2;
+
+    // 逻辑进程id
+    *pCur = getLogicProcessId(shm_name);
+    pCur++;
+
+    // 同步标志
+    *pCur = flag;
+    pCur++;
+
+    send_msg->m_data.assign(payload_data, pCur);
+
+    // 发送消息
+    send(send_msg, Define::Daemon);
+    LOG_DEBUG("ShmManager: setSyncFlag success, shm_name = %s, flag = %d", shm_name.c_str(), flag);
 }
 
 
