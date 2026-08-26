@@ -54,21 +54,25 @@ INL_FILES := $(shell find src -name '*.inl' 2>/dev/null)
 
 DEMO_SRCS := $(wildcard demo/*.cpp)
 DEMO_BINS := $(patsubst demo/%.cpp,$(BUILD_BIN)/%,$(DEMO_SRCS))
+TEST_SRCS := $(wildcard test/*.cpp)
+TEST_BINS := $(patsubst test/%.cpp,$(BUILD_BIN)/%,$(TEST_SRCS))
 
 # demo/daemon 链接与 demo 编译只走公开头目录，避免 -Isrc 与 -Ibuild/include
 # 同时命中同一份头文件的两份拷贝（#pragma once 按路径失效导致重定义）
 APP_CXXFLAGS := -std=c++14 -Wall -O2 -I$(BUILD_INC)
 APP_LDFLAGS  := -L$(BUILD_LIB) -l$(LIB_NAME) -Wl,-rpath,'$$ORIGIN/../lib' $(LDLIBS)
 
-.PHONY: all clean lib daemon demos install-headers
+.PHONY: all clean lib daemon demos tests install-headers
 
-all: lib daemon demos
+all: lib daemon demos tests
 
 lib: install-headers $(LIB_SO)
 
 daemon: $(DAEMON)
 
 demos: $(DEMO_BINS)
+
+tests: $(TEST_BINS)
 
 install-headers: | $(BUILD_INC)
 	@for f in $(HEADERS); do \
@@ -93,6 +97,9 @@ $(BUILD_OBJ)/%.o: src/%.cpp | $(BUILD_OBJ)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(BUILD_BIN)/%: demo/%.cpp $(LIB_SO) | $(BUILD_BIN) install-headers
+	$(CXX) $(APP_CXXFLAGS) -o $@ $< $(APP_LDFLAGS)
+
+$(TEST_BINS): $(BUILD_BIN)/%: test/%.cpp $(LIB_SO) | $(BUILD_BIN) install-headers
 	$(CXX) $(APP_CXXFLAGS) -o $@ $< $(APP_LDFLAGS)
 
 $(BUILD_INC) $(BUILD_LIB) $(BUILD_BIN):

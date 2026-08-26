@@ -30,7 +30,8 @@
 
 ```bash
 cd ipc-interface
-make          # 生成 lib、daemon、demo
+make          # 生成 lib、daemon、demo、对照测试
+make tests    # 只编 test/（如 udp_process）
 make clean
 ```
 
@@ -49,6 +50,7 @@ build/bin/daemon
 build/bin/process_1
 build/bin/process_2
 build/bin/process_3   # 随 demo/*.cpp 自动生成
+build/bin/udp_process    # 本机 UDP 对照，make / make tests 生成
 ```
 
 ## 运行 demo
@@ -65,6 +67,25 @@ cd build/bin
 `./daemon &` 后台运行后，守护进程会创建固定环形 shm / 同步 shm，再按 `kProcessExecutableNames` **自动拉起** `process_1`、`process_2`、`process_3` 等业务进程，无需再手动逐个启动。
 
 进程间通过各自固定 inbox 互发 `MESSAGE_ID_PROCESS`；日志中可看到收发与 `setReceiveHandler` 回调。
+
+## 性能
+
+同条件小包互发（约 1KB 载荷、三进程互相收发）下，ipc-interface 共享内存通道吞吐约 **46 MB/s**，本机 Unix DGRAM（`SOCK_DGRAM`）约 **33 MB/s**，收发约快 **40%**（46/33）。
+
+上述数字是小包场景；单包越大（例如用 `SIZE_1KB` / `SIZE_256KB` 槽、一次拷一整块），分片和每包固定开销占比越低，ipc-interface 的吞吐量会明显高于小包，也更容易拉开与 DGRAM 的差距。
+
+对照程序是 `test/udp_process.cpp`，载荷与 `demo/process_1/2/3` 相同（`n∈[1,1000]` 个 `uint16`，不发给自己），走 `127.0.0.1` UDP，端口 `51001~51003`。三个进程都要起，少一个则有一半包打到空端口，数字会对不齐。
+
+```bash
+cd /path/to/ipc-interface
+make tests                  # 或 make
+cd build/bin
+./udp_process 1             # 三个终端各跑一个
+./udp_process 2
+./udp_process 3
+```
+
+日志前缀为 `udp_1` / `udp_2` / `udp_3`，每秒打印 `recv rate`（实际收到）和 `send`（本进程发出）。UDP 可能静默丢包，以 `recv` 与 demo 的 `recv rate` 对比。
 
 若需单独调试某个业务进程（shm 已由 daemon 创建）：
 
@@ -231,6 +252,8 @@ src/
 demo/
   process_1.cpp
   process_2.cpp
+test/
+  udp_process.cpp   # 本机 UDP 吞吐对照
 Makefile
 ```
 
