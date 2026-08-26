@@ -35,7 +35,6 @@ bool EpollControl::post(std::function<void()> callback) {
         m_event.wake();
         return true;
     }
-    LOG_ERROR("EpollControl::post queue full, drop callback");
     return false;
 }
 

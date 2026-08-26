@@ -24,10 +24,8 @@ void MessageThread::stop() {
     wait();
 }
 
-void MessageThread::post(std::function<void()> task) {
-    if (!m_epoll.post(std::move(task))) {
-        LOG_ERROR("MessageThread::post queue full, drop task");
-    }
+bool MessageThread::post(std::function<void()> task) {
+    return m_epoll.post(std::move(task));
 }
 
 void MessageThread::postTimer(uint32_t delay_ms, TimerCallback callback) {

@@ -46,7 +46,8 @@ LogPrint* LogPrint::getInstance() {
 }
 
 void LogPrint::printLog(uint32_t level, const char* func, int line, const char* fmt, ...) {
-    if (!fmt) return;
+    if (!fmt || level > g_log_level) 
+        return;
 
     const char* level_tag = "UNKNOWN";
     switch (level) {
@@ -98,11 +99,7 @@ void LogPrint::printLog(uint32_t level, const char* func, int line, const char* 
     }
     snprintf(buf + off, sizeof(buf) - static_cast<size_t>(off), " -- %s:%d\n",
              func ? func : "?", line);
-
-    // 如果日志级别匹配，则打印到控制台
-    if (g_log_level >= level){
-        std::printf("%s", buf);
-    }
+    std::printf("%s", buf);
 }
 
 } // namespace Log

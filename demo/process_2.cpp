@@ -58,6 +58,7 @@ int main() {
     std::mt19937 rng{std::random_device{}()};
     std::uniform_int_distribution<int> dist(1, 1000);
 
+    sleep(1);
     while (true) {
         const uint16_t n = static_cast<uint16_t>(dist(rng));
         std::vector<uint8_t> msg((1u + n) * sizeof(uint16_t));
@@ -74,7 +75,7 @@ int main() {
             mgr->send(msg, IpcInterface::Define::MESSAGE_ID_PROCESS, IpcInterface::Define::kShmNames[i]);
         }
         // 休眠10ms，小槽数量下，避免单个发送线程过载
-        usleep(10000);
+        // usleep(100);
     }
     return 0;
 }

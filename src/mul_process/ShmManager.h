@@ -63,16 +63,18 @@ public:
      * @param msg 消息数据
      * @param message_id 消息id
      * @param shm_name 共享内存名称，如果为空则使用本进程的消息接口名称
+     * @return 是否成功
      */
-    void send(std::vector<uint8_t> msg, uint16_t message_id, std::string shm_name);
+    bool send(std::vector<uint8_t> msg, uint16_t message_id, std::string shm_name);
 
     /**
      * @brief 发送消息
      * @param buf_msg 消息数据
      * @param message_id 消息id
      * @param shm_name 共享内存名称，如果为空则使用本进程的消息接口名称
+     * @return 是否成功
      */
-    void send(std::shared_ptr<TagSendMessage> buf_msg, std::string shm_name);
+    bool send(std::shared_ptr<TagSendMessage> buf_msg, std::string shm_name);
 
     /**
      * @brief 设置接收消息回调函数

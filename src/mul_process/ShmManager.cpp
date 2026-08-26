@@ -236,18 +236,18 @@ void ShmManager::initSendWork() {
     m_send_work->start();
 }
 
-void ShmManager::send(std::vector<uint8_t> msg, uint16_t message_id, std::string shm_name) {
+bool ShmManager::send(std::vector<uint8_t> msg, uint16_t message_id, std::string shm_name) {
     if (msg.empty() || message_id >= Define::MESSAGE_ID_INVALID || shm_name.empty()) {
-        return;
+        return false;
     }
     auto shms = std::atomic_load(&m_shm_infos);
     auto works = std::atomic_load(&m_send_works);
     if (!shms) {
-        return;
+        return false;
     }
     auto it = shms->find(shm_name);
     if (it == shms->end() || !it->second) {
-        return;
+        return false;
     }
     auto shm = it->second;
     std::shared_ptr<SendWork> work;
@@ -261,22 +261,23 @@ void ShmManager::send(std::vector<uint8_t> msg, uint16_t message_id, std::string
         work = m_send_work;
     }
     if (work) {
-        work->send(std::move(msg), message_id, std::move(shm));
+        return work->send(std::move(msg), message_id, std::move(shm));
     }
+    return false;
 }
 
-void ShmManager::send(std::shared_ptr<TagSendMessage> buf_msg, std::string shm_name) {
+bool ShmManager::send(std::shared_ptr<TagSendMessage> buf_msg, std::string shm_name) {
     if (!buf_msg || buf_msg->m_data.empty() || buf_msg->m_message_id >= Define::MESSAGE_ID_INVALID || shm_name.empty()) {
-        return;
+        return false;
     }
     auto shms = std::atomic_load(&m_shm_infos);
     auto works = std::atomic_load(&m_send_works);
     if (!shms) {
-        return;
+        return false;
     }
     auto it = shms->find(shm_name);
     if (it == shms->end() || !it->second) {
-        return;
+        return false;
     }
     auto shm = it->second;
     std::shared_ptr<SendWork> work;
@@ -290,8 +291,9 @@ void ShmManager::send(std::shared_ptr<TagSendMessage> buf_msg, std::string shm_n
         work = m_send_work;
     }
     if (work) {
-        work->send(std::move(buf_msg), std::move(shm));
+        return work->send(std::move(buf_msg), std::move(shm));
     }
+    return false;
 }
 
 void ShmManager::onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag) {

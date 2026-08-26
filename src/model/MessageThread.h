@@ -30,8 +30,9 @@ public:
     /**
      * @brief 投递普通任务
      * @param task 任务回调函数
+     * @return 是否成功
      */
-    void post(std::function<void()> task);
+    bool post(std::function<void()> task);
 
     /**
      * @brief 投递一次性定时器任务
