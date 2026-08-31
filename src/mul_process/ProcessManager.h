@@ -3,6 +3,7 @@
 #include "../model/MessageThread.h"
 #include "../define/Common.h"
 #include "../model/ShmCreator.h"
+#include <cstdint>
 #include <vector>
 #include <memory>
 namespace IpcInterface {
@@ -18,7 +19,7 @@ typedef struct {
 class ProcessManager : public Model::MessageThread {
 public:
     // 定义一个创建进程以后得回调函数，两个参数分别是shm_name, pid
-    using CreateProcessCallback = std::function<void(std::string shm_name, int pid)>;
+    using CreateProcessCallback = std::function<void(std::string shm_name, uint32_t pid)>;
     ProcessManager();
     ~ProcessManager();
 

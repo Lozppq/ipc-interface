@@ -14,10 +14,10 @@ int main(int argc, char* argv[]) {
     IpcInterface::MulProcess::ShmManager::getInstance()->initParams(IpcInterface::Define::Daemon);
     // 子进程拉起后，把 shm_name/pid 登记到 ShmManager
     IpcInterface::MulProcess::ProcessManager::getInstance()->setCreateProcessCallback(
-        [](std::string shm_name, int pid) {
+        [](std::string shm_name, uint32_t pid) {
             // 固定 inbox：多发送者(0) -> 子进程为接收者
             IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo(
-                {shm_name, 0, static_cast<uint32_t>(pid)});
+                {shm_name, 0, pid});
         });
     // 设置同步标志回调函数
     IpcInterface::MulProcess::ShmManager::getInstance()->setSyncFlagCallback([](uint8_t logic_id, uint8_t flag) {
