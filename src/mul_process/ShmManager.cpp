@@ -185,7 +185,7 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
     if (shm->valid()) {
         return;
     }
-    if (shm->open(create)) {
+    if (shm->Open(create)) {
         if (create) {
             shm->set_senders_pid(info.m_sender_pid);
             shm->set_receiver_pid(info.m_receiver_pid);
@@ -203,7 +203,7 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
     } else {
         LOG_ERROR("ShmManager: openStreamShmRetry failed, name=%s, sender_pid=%u, receiver_pid=%u",
             info.m_shm_name.c_str(), info.m_sender_pid, info.m_receiver_pid);
-        shm->close();
+        shm->Close();
         postTimer(1000, [this, info = std::move(info), create](int) mutable {
             openStreamShmRetry(std::move(info), create);
         });
@@ -573,7 +573,7 @@ void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag) {
                     auto shm = it_shm->second;
                     shms->erase(it_shm);
                     storeShmInfos(shms);
-                    shm->close();
+                    shm->Close();
                 }
             }
 

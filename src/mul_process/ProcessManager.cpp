@@ -142,7 +142,7 @@ void ProcessManager::postHandleProcessCrash(uint32_t pid) {
 
 void ProcessManager::initProcessSyncShm() {
     m_process_sync_shm_creator = std::make_shared<Model::ShmCreator<Define::ProcessSyncInfo>>(Define::ProcessSyncShmName, sizeof(Define::ProcessSyncInfo));
-    if (m_process_sync_shm_creator && m_process_sync_shm_creator->open(true) && m_process_sync_shm_creator->get_shm_ptr()) {
+    if (m_process_sync_shm_creator && m_process_sync_shm_creator->Open(true) && m_process_sync_shm_creator->get_shm_ptr()) {
         LOG_DEBUG("ProcessManager: init process sync shm success, shm_name: %s", Define::ProcessSyncShmName);
         auto process_sync_info = m_process_sync_shm_creator->get_shm_ptr();
 

@@ -40,7 +40,7 @@ StreamShmCreator::StreamShmCreator(const std::string& name, uint32_t slot_size, 
 }
 
 StreamShmCreator::~StreamShmCreator() {
-    close();
+    Close();
 }
 
 bool StreamShmCreator::create_shm(bool create) {
@@ -89,7 +89,7 @@ bool StreamShmCreator::create_shm(bool create) {
 #endif
 }
 
-bool StreamShmCreator::open(bool create) {
+bool StreamShmCreator::Open(bool create) {
 #if defined(__linux__)
     m_is_owner = false;
     if (create) {
@@ -99,7 +99,7 @@ bool StreamShmCreator::open(bool create) {
             if (create_shm(true)) {
                 return true;
             }
-            close();
+            Close();
             shm_unlink(m_shm_name.c_str());
             m_is_owner = false;
             return false;
@@ -129,13 +129,13 @@ void StreamShmCreator::delete_shm() {
         SMALLRingQueueHeader* header = static_cast<SMALLRingQueueHeader*>(m_shm_ptr);
         header->m_flag.store(0, std::memory_order_release);
         sem_post(&header->m_sem);
-        close();
+        Close();
         shm_unlink(m_shm_name.c_str());
     }
 #endif
 }
 
-void StreamShmCreator::close() {
+void StreamShmCreator::Close() {
 #if defined(__linux__)
     if (m_shm_ptr && m_shm_ptr != MAP_FAILED) {
         munmap(m_shm_ptr, m_total_size);

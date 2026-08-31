@@ -36,7 +36,7 @@ public:
 #endif
     int readyCount() const { return m_ready_count; }
 
-    void close();
+    void Close();
     bool isValid() const;
 
 private:

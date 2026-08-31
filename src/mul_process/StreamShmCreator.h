@@ -137,7 +137,7 @@ public:
     StreamShmCreator(const std::string& name, uint32_t slot_size = SIZE_64B, uint32_t slot_count = 1024);
     
     /**
-     * @brief 析构函数，自动调用 close()
+     * @brief 析构函数，自动调用 Close()
      */
     ~StreamShmCreator();
 
@@ -149,12 +149,12 @@ public:
      * @param create true=创建模式，false=仅打开模式
      * @return 成功返回true，失败返回false
      */
-    bool open(bool create);
+    bool Open(bool create);
     
     /**
      * @brief 关闭共享内存，释放资源
      */
-    void close();
+    void Close();
 
     /**
      * @brief 删除共享内存

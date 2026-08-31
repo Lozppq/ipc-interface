@@ -42,12 +42,12 @@ public:
      * @param create true=创建模式，false=仅打开模式
      * @return 成功返回true，失败返回false
      */
-    bool open(bool create);
+    bool Open(bool create);
     
      /**
       * @brief 关闭共享内存，释放资源
       */
-    void close();
+    void Close();
      
      /**
       * @brief 检查是否有效

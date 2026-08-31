@@ -25,10 +25,10 @@ EpollHandle::EpollHandle() {
 }
 
 EpollHandle::~EpollHandle() {
-    close();
+    Close();
 }
 
-void EpollHandle::close() {
+void EpollHandle::Close() {
 #if defined(__linux__)
     if (m_epfd >= 0) {
         ::close(m_epfd);

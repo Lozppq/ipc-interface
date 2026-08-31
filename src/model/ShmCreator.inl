@@ -16,7 +16,7 @@ ShmCreator<T>::ShmCreator(const std::string& name, uint32_t total_size)
 
 template<typename T>
 ShmCreator<T>::~ShmCreator() {
-    close();
+    Close();
 }
 
 template<typename T>
@@ -56,7 +56,7 @@ bool ShmCreator<T>::create_shm(bool create) {
 }
 
 template<typename T>
-bool ShmCreator<T>::open(bool create) {
+bool ShmCreator<T>::Open(bool create) {
 #if defined(__linux__)
     m_is_owner = create;
     if (create) {
@@ -90,14 +90,14 @@ template<typename T>
 void ShmCreator<T>::delete_shm() {
 #if defined(__linux__)
     if (m_is_owner) {
-        close();
+        Close();
         shm_unlink(m_shm_name.c_str());
     }
 #endif
 }
 
 template<typename T>
-void ShmCreator<T>::close() {
+void ShmCreator<T>::Close() {
 #if defined(__linux__)
     if (m_shm_ptr) {
         munmap(static_cast<void*>(m_shm_ptr), m_total_size);
