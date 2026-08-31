@@ -204,7 +204,7 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
         LOG_ERROR("ShmManager: openStreamShmRetry failed, name=%s, sender_pid=%u, receiver_pid=%u",
             info.m_shm_name.c_str(), info.m_sender_pid, info.m_receiver_pid);
         shm->close();
-        postTimer(100, [this, info = std::move(info), create](int) mutable {
+        postTimer(1000, [this, info = std::move(info), create](int) mutable {
             openStreamShmRetry(std::move(info), create);
         });
     }
@@ -766,7 +766,7 @@ void ShmManager::createReceiveWork(std::string shm_name, ReceiveHandler receive_
     }
     auto shms = std::atomic_load(&m_shm_infos);
     if (!shms || shms->find(shm_name) == shms->end() || !shms->at(shm_name)) {
-        postTimer(100, [this, shm_name = std::move(shm_name), receive_handler = std::move(receive_handler)](int) mutable {
+        postTimer(1000, [this, shm_name = std::move(shm_name), receive_handler = std::move(receive_handler)](int) mutable {
             createReceiveWork(std::move(shm_name), std::move(receive_handler));
         });
         return;
@@ -785,7 +785,7 @@ void ShmManager::createSendWork(std::string shm_name) {
     }
     auto shms = std::atomic_load(&m_shm_infos);
     if (!shms || shms->find(shm_name) == shms->end() || !shms->at(shm_name)) {
-        postTimer(100, [this, shm_name = std::move(shm_name)](int) mutable {
+        postTimer(1000, [this, shm_name = std::move(shm_name)](int) mutable {
             createSendWork(std::move(shm_name));
         });
         return;
