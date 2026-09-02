@@ -330,20 +330,9 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
                 slice_count = hdr->m_data[head].m_slice_count.load(std::memory_order_acquire);
                 hdr->m_data[head].m_slice_id.store(0, std::memory_order_release);
                 hdr->m_data[head].m_slice_count.store(0, std::memory_order_release);
-                if (slice_count == 0) {
-                    hdr->m_data[head].m_commit.store(COMMIT_FALSE, std::memory_order_release);
-                    head = (head + 1) % m_slot_count;
-                    continue;
-                }
                 // 预设buf的总大小为第一个slice的data前四个字节组成的无符号数大小
                 uint32_t total_len = Standard::Small_U8ToU32(hdr->m_data[head].m_data);
-                if (total_len == 0) {
-                    hdr->m_data[head].m_commit.store(COMMIT_FALSE, std::memory_order_release);
-                    head = (head + 1) % m_slot_count;
-                    slice_count = 0;
-                    continue;
-                }
-                if (total_len < 2 || m_slot_size < 6) {
+                if (total_len < 2 || m_slot_size < 6 || slice_count == 0) {
                     hdr->m_data[head].m_commit.store(COMMIT_FALSE, std::memory_order_release);
                     head = (head + 1) % m_slot_count;
                     slice_count = 0;
@@ -352,13 +341,8 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
                 const uint32_t payload_total = total_len - 2;
                 buf_msg->m_data.resize(payload_total);
                 buf_msg->m_message_id = Standard::Small_U8ToU16(hdr->m_data[head].m_data + 4);
-                uint32_t first_copy = payload_total;
-                if (first_copy > m_slot_size - 6) {
-                    first_copy = m_slot_size - 6;
-                }
-                if (first_copy > 0) {
-                    memcpy(buf_msg->m_data.data(), hdr->m_data[head].m_data + 6, first_copy);
-                }
+                uint32_t first_copy = payload_total < m_slot_size - 6 ? payload_total : m_slot_size - 6;
+                memcpy(buf_msg->m_data.data(), hdr->m_data[head].m_data + 6, first_copy);
                 t_msg_index = first_copy;
             } else {
                 uint32_t remain = static_cast<uint32_t>(buf_msg->m_data.size()) - t_msg_index;
