@@ -4,6 +4,7 @@
 #include "../define/Common.h"
 #include "../model/ShmCreator.h"
 #include <cstdint>
+#include <functional>
 #include <vector>
 #include <memory>
 namespace IpcInterface {
@@ -18,8 +19,8 @@ typedef struct {
 
 class ProcessManager : public Model::MessageThread {
 public:
-    // 定义一个创建进程以后得回调函数，两个参数分别是shm_name, pid
-    using CreateProcessCallback = std::function<void(std::string shm_name, uint32_t pid)>;
+    // 创建进程后回调：shm_name, 逻辑进程槽位（不是 OS pid）
+    using CreateProcessCallback = std::function<void(std::string shm_name, uint8_t logic_id)>;
     ProcessManager();
     ~ProcessManager();
 
@@ -50,6 +51,12 @@ public:
      * @return 是否是需要主动拉起的进程
      */
     bool isNeedActivePullProcess(uint32_t pid);
+
+    /**
+     * @brief OS pid 转逻辑进程槽位
+     * @return 逻辑槽位，找不到返回 INVALID_FD
+     */
+    uint8_t lookupLogicIdByPid(uint32_t os_pid) const;
 
     /**
      * @brief 外部线程投递一次处理进程崩溃共享内存的重置
@@ -93,9 +100,8 @@ protected:
     */
     void initProcessSyncShm();
 
-protected:
     void OnThreadInit() override;
-
+    uint8_t getLogicProcessId(const std::string& shm_name) const;
 
 private:
     CreateProcessCallback m_create_process_callback;

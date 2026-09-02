@@ -53,7 +53,7 @@ void ProcessManager::createProcess(std::string shm_name, std::string process_exe
         if (pid > 0) {
             m_process_infos.push_back({shm_name, process_executable_name, pid});
             if (m_create_process_callback) {
-                m_create_process_callback(shm_name, pid);
+                m_create_process_callback(shm_name, getLogicProcessId(shm_name));
             }
             LOG_DEBUG("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
         } else {
@@ -86,6 +86,24 @@ bool ProcessManager::isAllowCreateProcess(const std::string& shm_name) {
     }
     return m_process_sync_shm_creator->get_shm_ptr()->m_flags[fd].load(std::memory_order_acquire)
         == Define::PROCESS_SYNC_FLAG_DONE;
+}
+
+uint8_t ProcessManager::getLogicProcessId(const std::string& shm_name) const {
+    for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
+        if (shm_name == Define::kShmNames[i]) {
+            return static_cast<uint8_t>(i);
+        }
+    }
+    return Define::INVALID_FD;
+}
+
+uint8_t ProcessManager::lookupLogicIdByPid(uint32_t os_pid) const {
+    auto it = std::find_if(m_process_infos.begin(), m_process_infos.end(),
+        [os_pid](const ProcessInfo& process_info) { return process_info.m_pid == os_pid; });
+    if (it == m_process_infos.end()) {
+        return Define::INVALID_FD;
+    }
+    return getLogicProcessId(it->m_shm_name);
 }
 
 bool ProcessManager::isNeedActivePullProcess(uint32_t pid) {

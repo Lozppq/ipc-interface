@@ -16,10 +16,6 @@
 #include <cstring>
 #include <algorithm>
 #include <memory>
-#if defined(__linux__)
-#include <unistd.h>
-#endif
-
 namespace IpcInterface {
 namespace MulProcess {
 
@@ -83,19 +79,11 @@ void ShmManager::storeReceiveWorks(std::shared_ptr<ReceiveWorkMap> m) {
 
 void ShmManager::initParams(const std::string& shm_name) {
     m_shm_name = shm_name;
-#if defined(__linux__)
-    uint32_t pid = static_cast<uint32_t>(getpid());
-#else
-    uint32_t pid = 0;
-#endif
     if (m_shm_name == Define::Daemon) {
-        // 固定 inbox：多发送者 -> 本进程接收
-        addPidNameInfo({shm_name, 0, pid});
+        addPidNameInfo({shm_name, Define::INVALID_FD, Define::Daemon_Fd});
     } else {
-        // 非守护进程：登记全部固定通道；本进程通道 receiver=自己，其余先占位
         for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
-            uint32_t receiver = (Define::kShmNames[i] == m_shm_name) ? pid : 0;
-            addPidNameInfo({Define::kShmNames[i], 0, receiver});
+            addPidNameInfo({Define::kShmNames[i], Define::INVALID_FD, static_cast<uint8_t>(i)});
         }
     }
 }
@@ -125,13 +113,11 @@ void ShmManager::postCreatePidNameInfo(PidNameInfo info) {
         });
         if (it == m_pidNameInfos.end()) {
             m_pidNameInfos.push_back(info);
-        } else if (it->m_sender_pid == info.m_sender_pid && it->m_receiver_pid == info.m_receiver_pid) {
-            return;
         } else {
-            it->m_sender_pid = info.m_sender_pid;
-            it->m_receiver_pid = info.m_receiver_pid;
+            it->m_sender_logic = info.m_sender_logic;
+            it->m_receiver_logic = info.m_receiver_logic;
         }
-        // 需要创建或更新共享内存上的 pid
+        // 需要创建或更新共享内存
         auto shms = std::atomic_load(&m_shm_infos);
         std::shared_ptr<StreamShmCreator> shm;
         if (shms) {
@@ -184,11 +170,11 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
         return;
     }
     if (shm->Open(create)) {
-        LOG_DEBUG("ShmManager: openStreamShmRetry success, name=%s, sender_pid=%u, receiver_pid=%u",
-            info.m_shm_name.c_str(), info.m_sender_pid, info.m_receiver_pid);
+        LOG_DEBUG("ShmManager: openStreamShmRetry success, name=%s, sender_logic=%u, receiver_logic=%u",
+            info.m_shm_name.c_str(), info.m_sender_logic, info.m_receiver_logic);
     } else {
-        LOG_ERROR("ShmManager: openStreamShmRetry failed, name=%s, sender_pid=%u, receiver_pid=%u",
-            info.m_shm_name.c_str(), info.m_sender_pid, info.m_receiver_pid);
+        LOG_ERROR("ShmManager: openStreamShmRetry failed, name=%s, sender_logic=%u, receiver_logic=%u",
+            info.m_shm_name.c_str(), info.m_sender_logic, info.m_receiver_logic);
         shm->Close();
         postTimer(1000, [this, info = std::move(info), create](int) mutable {
             openStreamShmRetry(std::move(info), create);
@@ -338,12 +324,9 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
             uint32_t slot_count = Standard::Small_U8ToU32(tag->m_data.data() + 8);
             const std::string shm_name = std::string(reinterpret_cast<const char*>(tag->m_data.data() + 13), static_cast<size_t>(shm_name_len));
 
-            // 协议里是逻辑进程槽位；映射到已登记的 OS pid，sender 暂按多发送者(0)
-            const uint32_t os_receiver = lookupReceiverPidByLogicId(receiver_logic);
-            const uint32_t os_sender = lookupReceiverPidByLogicId(sender_logic);
             std::string receiver_shm_name = lookupShmNameByLogicId(receiver_logic);
             std::string sender_shm_name = lookupShmNameByLogicId(sender_logic);
-            PidNameInfo info{shm_name, os_sender, os_receiver};
+            PidNameInfo info{shm_name, sender_logic, receiver_logic};
             if (std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),[&info](const PidNameInfo& item) { return item.m_shm_name == info.m_shm_name; }) != m_pidNameInfos.end()) {
                 send(tag->m_data, Define::MESSAGE_ID_DAEMON, receiver_shm_name);
                 send(tag->m_data, Define::MESSAGE_ID_DAEMON, sender_shm_name);
@@ -426,7 +409,7 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
                 }
             }
 
-            if (it_pid->m_sender_pid == 0) {
+            if (it_pid->m_sender_logic == Define::INVALID_FD) {
                 // 通知所有的进程释放共享内存
                 for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
                     if (Define::kShmNames[i] == Define::Daemon) {
@@ -435,9 +418,8 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
                     send(tag->m_data, Define::MESSAGE_ID_DAEMON, Define::kShmNames[i]);
                 }
             } else {
-                // 通知发送者和接收者进程释放共享内存
-                send(tag->m_data, Define::MESSAGE_ID_DAEMON, lookupShmNameByPid(it_pid->m_sender_pid));
-                send(tag->m_data, Define::MESSAGE_ID_DAEMON, lookupShmNameByPid(it_pid->m_receiver_pid));
+                send(tag->m_data, Define::MESSAGE_ID_DAEMON, lookupShmNameByLogicId(it_pid->m_sender_logic));
+                send(tag->m_data, Define::MESSAGE_ID_DAEMON, lookupShmNameByLogicId(it_pid->m_receiver_logic));
             }
             m_pidNameInfos.erase(it_pid);
             LOG_DEBUG("ShmManager: handleDaemonMessage ReleaseShm success, shm_name = %s", shm_name.c_str());
@@ -445,7 +427,7 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
             break;
         case Define::MESSAGE_SUB_ID_SET_SYNC_FLAG:
         {
-            if (!tag || tag->m_data.size() < 3) {
+            if (!tag || tag->m_data.size() < 4) {
                 LOG_ERROR("ShmManager: SET_SYNC_FLAG truncated, size=%zu", tag ? tag->m_data.size() : 0);
                 break;
             }
@@ -486,9 +468,7 @@ void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag) {
             uint32_t slot_count = Standard::Small_U8ToU32(tag->m_data.data() + 8);
             const std::string shm_name = std::string(reinterpret_cast<const char*>(tag->m_data.data() + 13), static_cast<size_t>(shm_name_len));
 
-            const uint32_t os_receiver = lookupReceiverPidByLogicId(receiver_logic);
-            const uint32_t os_sender = lookupReceiverPidByLogicId(sender_logic);
-            PidNameInfo info{shm_name, os_sender, os_receiver};
+            PidNameInfo info{shm_name, sender_logic, receiver_logic};
             if (std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),[&info](const PidNameInfo& item) { return item.m_shm_name == info.m_shm_name; }) == m_pidNameInfos.end()) {
                 m_pidNameInfos.push_back(info);
             } else {
@@ -656,11 +636,15 @@ bool ShmManager::RequestReleaseShm(const std::string& shm_name) {
     return true;
 }
 
-void ShmManager::handleProcessCrash(uint32_t pid) {
-    // 接收者崩溃，或唯一发送者崩溃时处理；sender_pid==0 表示多发送者不按发送者匹配
+void ShmManager::handleProcessCrash(uint8_t logic_id) {
+    if (logic_id == Define::INVALID_FD) {
+        return;
+    }
+    // 接收者崩溃，或唯一发送者崩溃时处理；sender==INVALID_FD 表示多发送者不按发送者匹配
     for (size_t i = 0; i < m_pidNameInfos.size(); ) {
-        const bool hit_receiver = (m_pidNameInfos[i].m_receiver_pid == pid);
-        const bool hit_sender = (m_pidNameInfos[i].m_sender_pid != 0 && m_pidNameInfos[i].m_sender_pid == pid);
+        const bool hit_receiver = (m_pidNameInfos[i].m_receiver_logic == logic_id);
+        const bool hit_sender = (m_pidNameInfos[i].m_sender_logic != Define::INVALID_FD
+            && m_pidNameInfos[i].m_sender_logic == logic_id);
         if (hit_receiver || hit_sender) {
             uint8_t logic_process_id = getLogicProcessId(m_pidNameInfos[i].m_shm_name);
             auto shms = std::atomic_load(&m_shm_infos);
@@ -676,7 +660,8 @@ void ShmManager::handleProcessCrash(uint32_t pid) {
                     // 固定通道：禁止收发，等待进程拉起后恢复
                     // 环内数据刻意保留，进程重新拉起后可恢复继续消费
                     shm->set_flag(0);
-                    LOG_INFO("ShmManager: handleProcessCrash success, shm_name = %s, pid = %d", m_pidNameInfos[i].m_shm_name.c_str(), pid);
+                    LOG_INFO("ShmManager: handleProcessCrash success, shm_name = %s, logic_id = %u",
+                        m_pidNameInfos[i].m_shm_name.c_str(), logic_id);
                     i++;
                 } else {
                     // 动态通道：走 RELEASE 解链 SHM 并通知对端；业务进程重启后须重新 RequestAllocateShm
@@ -707,19 +692,6 @@ void ShmManager::handleProcessCrash(uint32_t pid) {
     }
 }
 
-uint32_t ShmManager::lookupReceiverPidByLogicId(uint8_t logic_id) const {
-    if (logic_id >= Define::kShmNameCount) {
-        return 0;
-    }
-    const char* name = Define::kShmNames[logic_id];
-    auto it = std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),
-        [name](const PidNameInfo& item) { return item.m_shm_name == name; });
-    if (it == m_pidNameInfos.end()) {
-        return 0;
-    }
-    return it->m_receiver_pid;
-}
-
 std::string ShmManager::lookupShmNameByLogicId(uint8_t logic_id) const {
     if (logic_id >= Define::kShmNameCount) {
         return "";
@@ -734,15 +706,6 @@ uint8_t ShmManager::getLogicProcessId(const std::string& shm_name) {
         }
     }
     return Define::INVALID_FD;
-}
-
-std::string ShmManager::lookupShmNameByPid(uint32_t pid) {
-    for (uint32_t i = 0; i < m_pidNameInfos.size(); i++) {
-        if (m_pidNameInfos[i].m_sender_pid == pid || m_pidNameInfos[i].m_receiver_pid == pid) {
-            return m_pidNameInfos[i].m_shm_name;
-        }
-    }
-    return "";
 }
 
 void ShmManager::createReceiveWork(std::string shm_name, ReceiveHandler receive_handler) {

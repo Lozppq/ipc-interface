@@ -12,12 +12,11 @@ int main(int argc, char* argv[]) {
 #if defined(__linux__)
     IpcInterface::Log::setLogPrefix("daemon");
     IpcInterface::MulProcess::ShmManager::getInstance()->initParams(IpcInterface::Define::Daemon);
-    // 子进程拉起后，把 shm_name/pid 登记到 ShmManager
+    // 子进程拉起后，把 shm_name / 逻辑槽位登记到 ShmManager
     IpcInterface::MulProcess::ProcessManager::getInstance()->setCreateProcessCallback(
-        [](std::string shm_name, uint32_t pid) {
-            // 固定 inbox：多发送者(0) -> 子进程为接收者
+        [](std::string shm_name, uint8_t logic_id) {
             IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo(
-                {shm_name, 0, pid});
+                {shm_name, IpcInterface::Define::INVALID_FD, logic_id});
         });
     // 设置同步标志回调函数
     IpcInterface::MulProcess::ShmManager::getInstance()->setSyncFlagCallback([](uint8_t logic_id, uint8_t flag) {
@@ -32,12 +31,15 @@ int main(int argc, char* argv[]) {
         if (pid > 0) {
             LOG_ERROR("Daemon: process exited, pid: %d", pid);
             IpcInterface::MulProcess::ProcessManager::getInstance()->post([pid]() {
-                if (!IpcInterface::MulProcess::ProcessManager::getInstance()->isNeedActivePullProcess(static_cast<uint32_t>(pid))) {
+                auto process_manager = IpcInterface::MulProcess::ProcessManager::getInstance();
+                const uint32_t os_pid = static_cast<uint32_t>(pid);
+                if (!process_manager->isNeedActivePullProcess(os_pid)) {
                     return;
                 }
-                IpcInterface::MulProcess::ShmManager::getInstance()->post([pid]() {
-                    IpcInterface::MulProcess::ShmManager::getInstance()->handleProcessCrash(static_cast<uint32_t>(pid));
-                    IpcInterface::MulProcess::ProcessManager::getInstance()->postHandleProcessCrash(static_cast<uint32_t>(pid));
+                const uint8_t logic_id = process_manager->lookupLogicIdByPid(os_pid);
+                IpcInterface::MulProcess::ShmManager::getInstance()->post([os_pid, logic_id]() {
+                    IpcInterface::MulProcess::ShmManager::getInstance()->handleProcessCrash(logic_id);
+                    IpcInterface::MulProcess::ProcessManager::getInstance()->postHandleProcessCrash(os_pid);
                 });
             });
         }

@@ -23,11 +23,11 @@
 namespace IpcInterface {
 namespace MulProcess {
 
-// 共享内存名称与收发进程 OS pid 映射；sender_pid==0 表示多个发送者
+// 共享内存名称与逻辑进程槽位映射；sender==INVALID_FD 表示多个发送者
 typedef struct {
     std::string m_shm_name;      // 共享内存名称
-    uint32_t m_sender_pid;       // 发送者 pid，0 表示多个发送者
-    uint32_t m_receiver_pid;     // 接收者 pid
+    uint8_t m_sender_logic;      // 发送者逻辑槽位，INVALID_FD 表示多个发送者
+    uint8_t m_receiver_logic;    // 接收者逻辑槽位
 } PidNameInfo;
 
 using SyncFlagCallback = std::function<void(uint8_t logic_id, uint8_t flag)>;
@@ -96,9 +96,9 @@ public:
 
     /**
      * @brief 处理进程崩溃共享内存的重置
-     * @param pid 进程id
+     * @param logic_id 逻辑进程槽位
     */
-    void handleProcessCrash(uint32_t pid);
+    void handleProcessCrash(uint8_t logic_id);
 
     /**
      * @brief 外部线程投递一次请求申请分配共享内存
@@ -137,21 +137,6 @@ private:
      * @return 逻辑进程ID，无效返回INVALID_FD
     */
     uint8_t getLogicProcessId(const std::string& shm_name);
-
-    /**
-     * @brief 根据进程ID匹配共享内存名称
-     * @param pid 进程id
-     * @return 共享内存名称，无效返回空字符串
-    */
-    std::string lookupShmNameByPid(uint32_t pid);
-
-
-    /**
-     * @brief 按逻辑进程槽位查找已登记的接收者 OS pid
-     * @param logic_id 逻辑进程槽位
-     * @return 接收者 OS pid，无效返回0
-     */
-    uint32_t lookupReceiverPidByLogicId(uint8_t logic_id) const;
 
     /**
      * @brief 通过逻辑进程pid寻找已登记的共享内存名称

@@ -19,7 +19,7 @@ enum : uint16_t {
     MESSAGE_ID_INVALID, // 无效消息ID
 };
 
-// 消息子ID，uint16_t类型
+// MESSAGE_ID_DAEMON消息子ID，uint16_t类型
 enum : uint16_t {
     // 向守护进程申请分配共享内存的ID，
     // 数据部分：u8 发送者逻辑进程id，u8 接收者逻辑进程id，u32 单槽位大小，u32 槽位数量，u8 名称长度n，n个字节的名称
