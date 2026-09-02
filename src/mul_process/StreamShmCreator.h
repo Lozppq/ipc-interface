@@ -16,16 +16,38 @@
 
 namespace IpcInterface {
 namespace MulProcess {
-#define SMALL_DATA_SLOT_SIZE 64
-#define MEDIUM_DATA_SLOT_SIZE 1024
-#define LARGE_DATA_SLOT_SIZE (1024 * 256)
+
+enum{
+    COMMIT_FALSE = 0,
+    COMMIT_TRUE = 1,
+};
+
+
+/**
+ * @brief 支持的数据区大小（字节）
+ */
+enum : uint32_t {
+    SIZE_64B = 64,
+    SIZE_1KB = 1024,
+    SIZE_256KB = 256 * 1024,
+};
+
+// 不同级别槽位的超时时间限制，单位微妙，不能设置太小，避免高优先级线程调度问题
+enum : uint32_t {
+    TIMEOUT_64B = 100000,
+    TIMEOUT_1KB = 120000,
+    TIMEOUT_256KB = 150000,
+};
+
+// 这个代表最大分片的数量，目前分片id是uint8_t类型，所以最大分片数量为255
+constexpr uint32_t MAX_SLICE_COUNT = 255;
 
 typedef struct {
     std::atomic<uint8_t> m_slice_id;  // 切片id
     std::atomic<uint8_t> m_slice_count;  // 切片数量
     std::atomic<uint8_t> m_commit;  // 提交标志位
     std::atomic<uint8_t> m_reader_count;  // 读者数量
-    uint8_t m_data[SMALL_DATA_SLOT_SIZE];
+    uint8_t m_data[SIZE_64B];
 }SMALLDataSlot;
 
 typedef struct {
@@ -33,7 +55,7 @@ typedef struct {
     std::atomic<uint8_t> m_slice_count;  // 切片数量
     std::atomic<uint8_t> m_commit;  // 提交标志位
     std::atomic<uint8_t> m_reader_count;  // 读者数量
-    uint8_t m_data[MEDIUM_DATA_SLOT_SIZE];
+    uint8_t m_data[SIZE_1KB];
 }MEDIUMDataSlot;
 
 typedef struct {
@@ -41,7 +63,7 @@ typedef struct {
     std::atomic<uint8_t> m_slice_count;  // 切片数量
     std::atomic<uint8_t> m_commit;  // 提交标志位
     std::atomic<uint8_t> m_reader_count;  // 读者数量
-    uint8_t m_data[LARGE_DATA_SLOT_SIZE];
+    uint8_t m_data[SIZE_256KB];
 }LARGEDataSlot;
 
 
@@ -95,32 +117,6 @@ typedef struct {
     // bit1：1允许接收，0不允许接收
     LARGEDataSlot m_data[0];  // 柔性数组成员，指向共享内存数据区
 } LARGERingQueueHeader;
-
-
-enum{
-    COMMIT_FALSE = 0,
-    COMMIT_TRUE = 1,
-};
-
-
-/**
- * @brief 支持的数据区大小（字节）
- */
-enum : uint32_t {
-    SIZE_64B = 64,
-    SIZE_1KB = 1024,
-    SIZE_256KB = 256 * 1024,
-};
-
-// 不同级别槽位的超时时间限制，单位微妙，不能设置太小，避免高优先级线程调度问题
-enum : uint32_t {
-    TIMEOUT_64B = 10000,
-    TIMEOUT_1KB = 20000,
-    TIMEOUT_256KB = 50000,
-};
-
-// 这个代表最大分片的数量，目前分片id是uint8_t类型，所以最大分片数量为255
-constexpr uint32_t MAX_SLICE_COUNT = 255;
 
 class StreamShmCreator {
 public:
@@ -248,6 +244,9 @@ int StreamShmCreator::send_impl(Header* hdr, std::shared_ptr<TagSendMessage> buf
         return -1;
     }
     const uint32_t slot_need = (total_len + m_slot_size - 1) / m_slot_size;
+    if (slot_need == 0 || slot_need > MAX_SLICE_COUNT) {
+        return -1;
+    }
 
     while (1) {
         old_tail = hdr->m_tail.load(std::memory_order_acquire);
@@ -278,14 +277,13 @@ int StreamShmCreator::send_impl(Header* hdr, std::shared_ptr<TagSendMessage> buf
             if (copied > 0) {
                 memcpy(hdr->m_data[old_tail].m_data + 6, buf_msg->m_data.data(), copied);
             }
-            hdr->m_data[old_tail].m_slice_id.store(t_slice_id, std::memory_order_release);
-            hdr->m_data[old_tail].m_slice_count.store(slot_need, std::memory_order_release);
+            hdr->m_data[old_tail].m_slice_count.store(static_cast<uint8_t>(slot_need), std::memory_order_relaxed);
         } else {
             uint32_t remain = data_size - t_msg_index;
             copied = (remain < m_slot_size) ? remain : m_slot_size;
             memcpy(hdr->m_data[old_tail].m_data, buf_msg->m_data.data() + t_msg_index, copied);
         }
-
+        hdr->m_data[old_tail].m_slice_id.store(static_cast<uint8_t>(t_slice_id), std::memory_order_relaxed);
         hdr->m_data[old_tail].m_commit.store(COMMIT_TRUE, std::memory_order_release);
         old_tail = (old_tail + 1) % m_slot_count;
         t_slice_id += 1;
@@ -326,13 +324,12 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
         // 如果已经提交了标志位
         if (hdr->m_data[head].m_commit.load(std::memory_order_acquire) == COMMIT_TRUE) {
             start_time = get_timestamp();
+            const uint8_t slice_id = hdr->m_data[head].m_slice_id.load(std::memory_order_acquire);
+            hdr->m_data[head].m_slice_id.store(0, std::memory_order_release);
             if (slice_count == 0) {
                 slice_count = hdr->m_data[head].m_slice_count.load(std::memory_order_acquire);
-                hdr->m_data[head].m_slice_id.store(0, std::memory_order_release);
-                hdr->m_data[head].m_slice_count.store(0, std::memory_order_release);
-                // 预设buf的总大小为第一个slice的data前四个字节组成的无符号数大小
                 uint32_t total_len = Standard::Small_U8ToU32(hdr->m_data[head].m_data);
-                if (total_len < 2 || m_slot_size < 6 || slice_count == 0) {
+                if (slice_id != 0 || slice_count == 0 || total_len < 2 || m_slot_size < 6) {
                     hdr->m_data[head].m_commit.store(COMMIT_FALSE, std::memory_order_release);
                     head = (head + 1) % m_slot_count;
                     slice_count = 0;
@@ -344,6 +341,14 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
                 uint32_t first_copy = payload_total < m_slot_size - 6 ? payload_total : m_slot_size - 6;
                 memcpy(buf_msg->m_data.data(), hdr->m_data[head].m_data + 6, first_copy);
                 t_msg_index = first_copy;
+            } else if (slice_id != slices_done) {
+                buf_msg->m_data.clear();
+                t_msg_index = 0;
+                slices_done = 0;
+                slice_count = 0;
+                hdr->m_data[head].m_commit.store(COMMIT_FALSE, std::memory_order_release);
+                head = (head + 1) % m_slot_count;
+                continue;
             } else {
                 uint32_t remain = static_cast<uint32_t>(buf_msg->m_data.size()) - t_msg_index;
                 uint32_t copy_len = (remain < m_slot_size) ? remain : m_slot_size;
@@ -355,7 +360,6 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
             hdr->m_data[head].m_commit.store(COMMIT_FALSE, std::memory_order_release);
             slices_done++;
             head = (head + 1) % m_slot_count;
-            // 已收齐首片声明的 slice_count 片则结束（勿用被清零的 slice_id 判断）
             if (slice_count > 0 && slices_done >= slice_count) {
                 break;
             }
@@ -382,7 +386,7 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
                 tail_last = not_commit_head;
                 start_time = get_timestamp();
             } else if (get_timestamp() - start_time > m_slot_timeout){ // 进入这里说明找到了一直未提交的tail，进入超时处理
-                LOG_ERROR("StreamShmCreator::recv_impl timeout,name=%s,head=%d,not_commit_head=%d", m_shm_name.c_str(), head, not_commit_head);
+                LOG_ERROR("StreamShmCreator::recv_impl timeout,name=%s,head=%d,not_commit_head=%d,data_size=%zu", m_shm_name.c_str(), head, not_commit_head, buf_msg->m_data.size());
                 buf_msg->m_data.clear();
                 t_msg_index = 0;
                 head = not_commit_head;

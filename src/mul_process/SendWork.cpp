@@ -53,13 +53,10 @@ void SendWork::SendMessage(const std::shared_ptr<TagSendMessage>& tag) {
     if (!isRunning() || !tag || tag->m_data.empty() || !tag->m_shm) {
         return;
     }
-    while (isRunning()) 
-    {
-        if (tag->m_shm->send(tag) >= 0) 
+    for (uint32_t retry = 0; retry < kSendMaxRetry && isRunning(); ++retry) {
+        if (tag->m_shm->send(tag) >= 0) {
             return;
-        tag->m_retry_count++;
-        if (tag->m_retry_count >= kSendMaxRetry) 
-            break;
+        }
     }
     LOG_DEBUG("SendWork: send failed data size=%u, toShm=%s",
               tag->m_data.size(), tag->m_shm->get_shm_name().c_str());

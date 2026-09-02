@@ -1,6 +1,6 @@
 /**
  * @file TagMessage.h
- * @brief 收发消息结构体（供 StreamShmCreator / SendWork / ReceiveWork 共用）
+ * @brief 收发消息结构体（供 StreamShmCreator / ShmManager / ReceiveWork 共用）
  */
 
 #pragma once
@@ -23,7 +23,6 @@ struct TagSendMessage {
     std::vector<uint8_t> m_data;
     uint16_t m_message_id{0};
     std::shared_ptr<StreamShmCreator> m_shm;
-    uint32_t m_retry_count{0};
 };
 
 struct TagReceiveMessage {

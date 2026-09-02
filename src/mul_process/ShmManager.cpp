@@ -29,20 +29,9 @@ ShmManager::~ShmManager() {
         m_receive_work->stop();
         delete m_receive_work;
     }
-    if (m_send_work) {
-        m_send_work->stop();
-    }
     auto recv_works = std::atomic_load(&m_receive_works);
     if (recv_works) {
         for (const auto& kv : *recv_works) {
-            if (kv.second) {
-                kv.second->stop();
-            }
-        }
-    }
-    auto works = std::atomic_load(&m_send_works);
-    if (works) {
-        for (const auto& kv : *works) {
             if (kv.second) {
                 kv.second->stop();
             }
@@ -57,15 +46,6 @@ std::shared_ptr<ShmManager::ShmInfoMap> ShmManager::cloneShmInfos() const {
 
 void ShmManager::storeShmInfos(std::shared_ptr<ShmInfoMap> m) {
     std::atomic_store(&m_shm_infos, std::shared_ptr<const ShmInfoMap>(std::move(m)));
-}
-
-std::shared_ptr<ShmManager::SendWorkMap> ShmManager::cloneSendWorks() const {
-    auto old = std::atomic_load(&m_send_works);
-    return std::make_shared<SendWorkMap>(old ? *old : SendWorkMap{});
-}
-
-void ShmManager::storeSendWorks(std::shared_ptr<SendWorkMap> m) {
-    std::atomic_store(&m_send_works, std::shared_ptr<const SendWorkMap>(std::move(m)));
 }
 
 std::shared_ptr<ShmManager::ReceiveWorkMap> ShmManager::cloneReceiveWorks() const {
@@ -141,7 +121,6 @@ void ShmManager::postCreatePidNameInfo(PidNameInfo info) {
 void ShmManager::OnThreadInit() {
     initShm(m_shm_name == Define::Daemon);
     initReceiveWork();
-    initSendWork();
 }
 
 void ShmManager::initShm(bool create) {
@@ -189,12 +168,7 @@ void ShmManager::initReceiveWork() {
         LOG_ERROR("ShmManager: initReceiveWork failed, shm_name=%s not found", m_shm_name.c_str());
         return;
     }
-    m_receive_work = new ReceiveWork(shms->at(m_shm_name), [this](std::shared_ptr<TagReceiveMessage> tag) {
-        // 投递到 ShmManager 工作线程，避免在接收线程里处理业务/停线程
-        post([this, tag = std::move(tag)]() {
-            onReceiveMessage(tag);
-        });
-    });
+    m_receive_work = new ReceiveWork(shms->at(m_shm_name), std::bind(&ShmManager::onReceiveMessage, this, std::placeholders::_1));
     m_receive_work->start();
 }
 
@@ -202,48 +176,11 @@ void ShmManager::setReceiveHandler(ReceiveHandler handler) {
     m_receive_handler = std::move(handler);
 }
 
-
-void ShmManager::initSendWork() {
-    m_send_work = std::make_shared<SendWork>();
-    m_send_work->start();
-}
-
-bool ShmManager::send(std::vector<uint8_t> msg, uint16_t message_id, std::string shm_name) {
-    if (msg.empty() || message_id >= Define::MESSAGE_ID_INVALID || shm_name.empty()) {
-        return false;
-    }
-    auto shms = std::atomic_load(&m_shm_infos);
-    auto works = std::atomic_load(&m_send_works);
-    if (!shms) {
-        return false;
-    }
-    auto it = shms->find(shm_name);
-    if (it == shms->end() || !it->second) {
-        return false;
-    }
-    auto shm = it->second;
-    std::shared_ptr<SendWork> work;
-    if (works) {
-        auto it_work = works->find(shm_name);
-        if (it_work != works->end()) {
-            work = it_work->second;
-        }
-    }
-    if (!work) {
-        work = m_send_work;
-    }
-    if (work) {
-        return work->send(std::move(msg), message_id, std::move(shm));
-    }
-    return false;
-}
-
-bool ShmManager::send(std::shared_ptr<TagSendMessage> buf_msg, std::string shm_name) {
+bool ShmManager::send(const std::shared_ptr<TagSendMessage>& buf_msg, const std::string& shm_name) {
     if (!buf_msg || buf_msg->m_data.empty() || buf_msg->m_message_id >= Define::MESSAGE_ID_INVALID || shm_name.empty()) {
         return false;
     }
     auto shms = std::atomic_load(&m_shm_infos);
-    auto works = std::atomic_load(&m_send_works);
     if (!shms) {
         return false;
     }
@@ -251,21 +188,20 @@ bool ShmManager::send(std::shared_ptr<TagSendMessage> buf_msg, std::string shm_n
     if (it == shms->end() || !it->second) {
         return false;
     }
-    auto shm = it->second;
-    std::shared_ptr<SendWork> work;
-    if (works) {
-        auto it_work = works->find(shm_name);
-        if (it_work != works->end()) {
-            work = it_work->second;
+    buf_msg->m_shm = it->second;
+    for (uint32_t retry = 0; retry < kSendMaxRetry; ++retry) {
+        if (buf_msg->m_shm->send(buf_msg) >= 0) {
+            return true;
         }
     }
-    if (!work) {
-        work = m_send_work;
-    }
-    if (work) {
-        return work->send(std::move(buf_msg), std::move(shm));
-    }
     return false;
+}
+
+std::shared_ptr<TagSendMessage> ShmManager::makeSendMessage(std::vector<uint8_t>&& data, uint16_t message_id) {
+    auto tag = std::make_shared<TagSendMessage>();
+    tag->m_data = std::move(data);
+    tag->m_message_id = message_id;
+    return tag;
 }
 
 void ShmManager::onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag) {
@@ -276,11 +212,13 @@ void ShmManager::onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag) {
     switch (tag->m_message_id) {
         case Define::MESSAGE_ID_DAEMON:
         {
-            if (m_shm_name == Define::Daemon) { // 如果是守护进程则是处理业务进程发来的请求消息
-                handleDaemonMessage(tag);
-            }else { // 如果是业务进程则是处理响应守护进程发来的消息
-                handleProcessMessage(tag);
-            }
+            post([this, tag = std::move(tag)]() {
+                if (m_shm_name == Define::Daemon) { // 如果是守护进程则是处理业务进程发来的请求消息
+                    handleDaemonMessage(tag);
+                }else { // 如果是业务进程则是处理响应守护进程发来的消息
+                    handleProcessMessage(tag);
+                }
+            });
         }
             break;
         case Define::MESSAGE_ID_PROCESS:
@@ -293,10 +231,6 @@ void ShmManager::onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag) {
         default:
             break;
     }
-    
-    LOG_DEBUG("ShmManager[%s] recv %zu bytes: %s",
-        m_shm_name.c_str(), tag->m_data.size(),
-        reinterpret_cast<const char*>(tag->m_data.data()));
 }
 
 void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
@@ -326,10 +260,11 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
 
             std::string receiver_shm_name = lookupShmNameByLogicId(receiver_logic);
             std::string sender_shm_name = lookupShmNameByLogicId(sender_logic);
+            auto send_tag = makeSendMessage(std::move(tag->m_data), tag->m_message_id);
             PidNameInfo info{shm_name, sender_logic, receiver_logic};
             if (std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),[&info](const PidNameInfo& item) { return item.m_shm_name == info.m_shm_name; }) != m_pidNameInfos.end()) {
-                send(tag->m_data, Define::MESSAGE_ID_DAEMON, receiver_shm_name);
-                send(tag->m_data, Define::MESSAGE_ID_DAEMON, sender_shm_name);
+                send(send_tag, receiver_shm_name);
+                send(send_tag, sender_shm_name);
                 LOG_DEBUG("ShmManager: handleDaemonMessage AllocateShm idempotent, shm_name = %s, receiver_shm_name = %s, sender_shm_name = %s",
                     shm_name.c_str(), receiver_shm_name.c_str(), sender_shm_name.c_str());
                 break;
@@ -343,8 +278,8 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
             openStreamShmRetry(info, true);
 
             // 响应业务进程请求，将消息发送给接收者进程和发送者进程
-            send(tag->m_data, Define::MESSAGE_ID_DAEMON, receiver_shm_name);
-            send(tag->m_data, Define::MESSAGE_ID_DAEMON, sender_shm_name);
+            send(send_tag, receiver_shm_name);
+            send(send_tag, sender_shm_name);
             LOG_DEBUG("ShmManager: handleDaemonMessage AllocateShm success, shm_name = %s, receiver_shm_name = %s, sender_shm_name = %s",
                 shm_name.c_str(), receiver_shm_name.c_str(), sender_shm_name.c_str());
         }
@@ -362,6 +297,7 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
             }
             // 解析数据部分，从第3个字节开始
             const std::string shm_name = std::string(reinterpret_cast<const char*>(tag->m_data.data() + 3), static_cast<size_t>(shm_name_len));
+            auto send_tag = makeSendMessage(std::move(tag->m_data), tag->m_message_id);
 
             // 找到对应的共享内存名称的pidInfo信息
             auto it_pid = std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),[&shm_name](const PidNameInfo& item) { return item.m_shm_name == shm_name; });
@@ -377,20 +313,6 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
                     auto work = it_receive_work->second;
                     works->erase(it_receive_work);
                     storeReceiveWorks(works);
-                    if (work) {
-                        work->stop();
-                    }
-                }
-            }
-            
-            // 找到对应的发送消息线程
-            {
-                auto works = cloneSendWorks();
-                auto it_send_work = works->find(shm_name);
-                if (it_send_work != works->end()) {
-                    auto work = it_send_work->second;
-                    works->erase(it_send_work);
-                    storeSendWorks(works);
                     if (work) {
                         work->stop();
                     }
@@ -415,11 +337,11 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
                     if (Define::kShmNames[i] == Define::Daemon) {
                         continue;
                     }
-                    send(tag->m_data, Define::MESSAGE_ID_DAEMON, Define::kShmNames[i]);
+                    send(send_tag, Define::kShmNames[i]);
                 }
             } else {
-                send(tag->m_data, Define::MESSAGE_ID_DAEMON, lookupShmNameByLogicId(it_pid->m_sender_logic));
-                send(tag->m_data, Define::MESSAGE_ID_DAEMON, lookupShmNameByLogicId(it_pid->m_receiver_logic));
+                send(send_tag, lookupShmNameByLogicId(it_pid->m_sender_logic));
+                send(send_tag, lookupShmNameByLogicId(it_pid->m_receiver_logic));
             }
             m_pidNameInfos.erase(it_pid);
             LOG_DEBUG("ShmManager: handleDaemonMessage ReleaseShm success, shm_name = %s", shm_name.c_str());
@@ -511,20 +433,6 @@ void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag) {
                     auto work = it_receive_work->second;
                     works->erase(it_receive_work);
                     storeReceiveWorks(works);
-                    if (work) {
-                        work->stop();
-                    }
-                }
-            }
-            
-            // 找到对应的发送消息线程
-            {
-                auto works = cloneSendWorks();
-                auto it_send_work = works->find(shm_name);
-                if (it_send_work != works->end()) {
-                    auto work = it_send_work->second;
-                    works->erase(it_send_work);
-                    storeSendWorks(works);
                     if (work) {
                         work->stop();
                     }
@@ -724,25 +632,6 @@ void ShmManager::createReceiveWork(std::string shm_name, ReceiveHandler receive_
     work->start();
 }
 
-void ShmManager::createSendWork(std::string shm_name) {
-    auto works = std::atomic_load(&m_send_works);
-    if (works && works->find(shm_name) != works->end()) {
-        return;
-    }
-    auto shms = std::atomic_load(&m_shm_infos);
-    if (!shms || shms->find(shm_name) == shms->end() || !shms->at(shm_name)) {
-        postTimer(1000, [this, shm_name = std::move(shm_name)](int) mutable {
-            createSendWork(std::move(shm_name));
-        });
-        return;
-    }
-    auto work = std::make_shared<SendWork>(shms->at(shm_name));
-    auto neu = cloneSendWorks();
-    neu->emplace(shm_name, work);
-    storeSendWorks(neu);
-    work->start();
-}
-
 void ShmManager::postRequestAllocateShm(std::string sender_shm_name, std::string receiver_shm_name, uint32_t slot_size, uint32_t slot_count, std::string new_shm_name) {
     post([this, sender_shm_name = std::move(sender_shm_name), receiver_shm_name = std::move(receiver_shm_name), slot_size, slot_count, new_shm_name = std::move(new_shm_name)]() {
         RequestAllocateShm(sender_shm_name, receiver_shm_name, slot_size, slot_count, new_shm_name);
@@ -758,12 +647,6 @@ void ShmManager::postRequestReleaseShm(std::string shm_name) {
 void ShmManager::postCreateReceiveWork(std::string shm_name, ReceiveHandler receive_handler) {
     post([this, shm_name = std::move(shm_name), receive_handler = std::move(receive_handler)]() mutable {
         createReceiveWork(std::move(shm_name), std::move(receive_handler));
-    });
-}
-
-void ShmManager::postCreateSendWork(std::string shm_name) {
-    post([this, shm_name = std::move(shm_name)]() mutable {
-        createSendWork(std::move(shm_name));
     });
 }
 

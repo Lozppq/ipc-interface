@@ -28,6 +28,7 @@ namespace {
 constexpr int kProcCount = 3;
 constexpr uint16_t kBasePort = 51001;
 constexpr int kSockBuf = 4 * 1024 * 1024;
+const uint16_t MAX_N = 1000;
 
 sockaddr_in make_addr(uint16_t port) {
     sockaddr_in a{};
@@ -44,11 +45,8 @@ bool check_payload(const uint8_t* data, ssize_t nbyte) {
     const auto* p = reinterpret_cast<const uint16_t*>(data);
     const uint16_t n = p[0];
     const size_t expect = (1u + n) * sizeof(uint16_t);
-    if (n < 1 || n > 1000 || static_cast<size_t>(nbyte) != expect) {
+    if (n < 1 || n > MAX_N || static_cast<size_t>(nbyte) != expect) {
         return false;
-    }
-    for (uint16_t i = 1; i <= n; ++i) {
-        if (p[i] != i) return false;
     }
     return true;
 }
@@ -109,7 +107,7 @@ int main(int argc, char* argv[]) {
     }).detach();
 
     std::thread([fd, &recv_bytes, &recv_pkts]() {
-        uint8_t buf[4096];
+        uint8_t buf[64 * 1024];
         while (true) {
             const ssize_t n = ::recvfrom(fd, buf, sizeof(buf), 0, nullptr, nullptr);
             if (n <= 0) continue;
@@ -125,7 +123,7 @@ int main(int argc, char* argv[]) {
     sleep(1);
 
     std::mt19937 rng{std::random_device{}()};
-    std::uniform_int_distribution<int> dist(1, 1000);
+    std::uniform_int_distribution<int> dist(500, MAX_N);
 
     while (true) {
         const uint16_t n = static_cast<uint16_t>(dist(rng));

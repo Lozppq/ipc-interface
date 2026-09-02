@@ -10,7 +10,6 @@
 #include "../model/MessageThread.h"
 #include "StreamShmCreator.h"
 #include "ReceiveWork.h"
-#include "SendWork.h"
 #include <atomic>
 #include <cstdint>
 #include <unordered_map>
@@ -61,22 +60,10 @@ public:
     ShmManager& operator=(const ShmManager&) = delete;
 
     /**
-     * @brief 发送消息
-     * @param msg 消息数据
-     * @param message_id 消息id
-     * @param shm_name 共享内存名称，如果为空则使用本进程的消息接口名称
-     * @return 是否成功
+     * @brief 发送消息（调用线程直发）
      */
-    bool send(std::vector<uint8_t> msg, uint16_t message_id, std::string shm_name);
-
-    /**
-     * @brief 发送消息
-     * @param buf_msg 消息数据
-     * @param message_id 消息id
-     * @param shm_name 共享内存名称，如果为空则使用本进程的消息接口名称
-     * @return 是否成功
-     */
-    bool send(std::shared_ptr<TagSendMessage> buf_msg, std::string shm_name);
+    bool send(const std::shared_ptr<TagSendMessage>& buf_msg, const std::string& shm_name);
+    std::shared_ptr<TagSendMessage> makeSendMessage(std::vector<uint8_t>&& data, uint16_t message_id);
 
     /**
      * @brief 设置接收消息回调函数
@@ -114,11 +101,6 @@ public:
      * @brief 外部线程投递一次根据共享内存名称创建接收消息线程
     */
     void postCreateReceiveWork(std::string shm_name, ReceiveHandler receive_handler);
-
-    /**
-     * @brief 外部线程投递一次根据共享内存名称创建发送消息线程
-    */
-    void postCreateSendWork(std::string shm_name);
 
     /**
      * @brief 设置同步标志回调函数
@@ -169,12 +151,6 @@ private:
      * @param receive_handler 接收消息回调函数
     */
     void createReceiveWork(std::string shm_name, ReceiveHandler receive_handler);
-    
-    /**
-     * @brief 根据共享内存名称创建发送消息线程
-     * @param shm_name 共享内存名称
-    */
-    void createSendWork(std::string shm_name);
 
     /**
      * @brief 设置同步标志
@@ -203,11 +179,6 @@ private:
     */
     void initReceiveWork();
 
-    /**
-     * @brief 初始化发送消息线程
-    */
-    void initSendWork();
-
     void openStreamShmRetry(PidNameInfo info, bool create);
 
     /**
@@ -223,26 +194,19 @@ private:
     void handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag);
 
     using ShmInfoMap = std::map<std::string, std::shared_ptr<StreamShmCreator>>;
-    using SendWorkMap = std::map<std::string, std::shared_ptr<SendWork>>;
     using ReceiveWorkMap = std::map<std::string, std::shared_ptr<ReceiveWork>>;
 
     std::shared_ptr<ShmInfoMap> cloneShmInfos() const;
     void storeShmInfos(std::shared_ptr<ShmInfoMap> m);
-    std::shared_ptr<SendWorkMap> cloneSendWorks() const;
-    void storeSendWorks(std::shared_ptr<SendWorkMap> m);
     std::shared_ptr<ReceiveWorkMap> cloneReceiveWorks() const;
     void storeReceiveWorks(std::shared_ptr<ReceiveWorkMap> m);
 
     // 无锁快照：单写（本线程）多读（业务 send）
     std::shared_ptr<const ShmInfoMap> m_shm_infos;
-    std::shared_ptr<const SendWorkMap> m_send_works;
     std::shared_ptr<const ReceiveWorkMap> m_receive_works;
 
     std::string m_shm_name;  // 本进程的消息接口名称
-    // 接收消息线程对象
     ReceiveWork* m_receive_work{NULL};
-    // 默认发送消息线程
-    std::shared_ptr<SendWork> m_send_work;
     // 初始化进程id与消息接口名称映射
     std::vector<PidNameInfo> m_pidNameInfos;
     ReceiveHandler m_receive_handler{NULL};
