@@ -38,9 +38,6 @@ void ReceiveWork::ReceiveMessage() {
     while (isRunning() && m_shm && m_receive_handler) {
         auto buf_msg = std::make_shared<TagReceiveMessage>();
         const uint32_t n = m_shm->recv(buf_msg);
-        if (!isRunning()) {
-            break;
-        }
         if (n > 0) {
             m_receive_handler(buf_msg);
         }
