@@ -640,12 +640,9 @@ void ShmManager::handleProcessCrash(uint8_t logic_id) {
     if (logic_id == Define::INVALID_FD) {
         return;
     }
-    // 接收者崩溃，或唯一发送者崩溃时处理；sender==INVALID_FD 表示多发送者不按发送者匹配
+    // 只处理接收者崩溃。多发送者通道上单个发送者退出不释放，其他发送者继续用。
     for (size_t i = 0; i < m_pidNameInfos.size(); ) {
-        const bool hit_receiver = (m_pidNameInfos[i].m_receiver_logic == logic_id);
-        const bool hit_sender = (m_pidNameInfos[i].m_sender_logic != Define::INVALID_FD
-            && m_pidNameInfos[i].m_sender_logic == logic_id);
-        if (hit_receiver || hit_sender) {
+        if (m_pidNameInfos[i].m_receiver_logic == logic_id) {
             uint8_t logic_process_id = getLogicProcessId(m_pidNameInfos[i].m_shm_name);
             auto shms = std::atomic_load(&m_shm_infos);
             std::shared_ptr<StreamShmCreator> shm;
