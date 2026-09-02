@@ -146,8 +146,6 @@ void ShmManager::postCreatePidNameInfo(PidNameInfo info) {
             storeShmInfos(neu);
             openStreamShmRetry(info, true);
         } else {
-            shm->set_senders_pid(info.m_sender_pid);
-            shm->set_receiver_pid(info.m_receiver_pid);
             shm->set_flag(Define::BIT0 | Define::BIT1);
         }
 
@@ -186,18 +184,6 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
         return;
     }
     if (shm->Open(create)) {
-        if (create) {
-            shm->set_senders_pid(info.m_sender_pid);
-            shm->set_receiver_pid(info.m_receiver_pid);
-        } else {
-            auto it_info = std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(), [info](const PidNameInfo& item) {
-                return item.m_shm_name == info.m_shm_name;
-            });
-            if (it_info != m_pidNameInfos.end()) {
-                it_info->m_sender_pid = shm->get_senders_pid();
-                it_info->m_receiver_pid = shm->get_receiver_pid();
-            }
-        }
         LOG_DEBUG("ShmManager: openStreamShmRetry success, name=%s, sender_pid=%u, receiver_pid=%u",
             info.m_shm_name.c_str(), info.m_sender_pid, info.m_receiver_pid);
     } else {

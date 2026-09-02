@@ -24,7 +24,7 @@ typedef struct {
     std::atomic<uint8_t> m_slice_id;  // 切片id
     std::atomic<uint8_t> m_slice_count;  // 切片数量
     std::atomic<uint8_t> m_commit;  // 提交标志位
-    std::atomic<uint8_t> m_modify_id;  // 修改者id
+    std::atomic<uint8_t> m_reader_count;  // 读者数量
     uint8_t m_data[SMALL_DATA_SLOT_SIZE];
 }SMALLDataSlot;
 
@@ -32,7 +32,7 @@ typedef struct {
     std::atomic<uint8_t> m_slice_id;  // 切片id
     std::atomic<uint8_t> m_slice_count;  // 切片数量
     std::atomic<uint8_t> m_commit;  // 提交标志位
-    std::atomic<uint8_t> m_modify_id;  // 修改者id
+    std::atomic<uint8_t> m_reader_count;  // 读者数量
     uint8_t m_data[MEDIUM_DATA_SLOT_SIZE];
 }MEDIUMDataSlot;
 
@@ -40,7 +40,7 @@ typedef struct {
     std::atomic<uint8_t> m_slice_id;  // 切片id
     std::atomic<uint8_t> m_slice_count;  // 切片数量
     std::atomic<uint8_t> m_commit;  // 提交标志位
-    std::atomic<uint8_t> m_modify_id;  // 修改者id
+    std::atomic<uint8_t> m_reader_count;  // 读者数量
     uint8_t m_data[LARGE_DATA_SLOT_SIZE];
 }LARGEDataSlot;
 
@@ -56,8 +56,6 @@ typedef struct {
     std::atomic<uint32_t> m_tail;  // 队尾指针
     std::atomic<uint32_t> m_slot_size; // 数据区大小
     std::atomic<uint32_t> m_slot_count; // 数据区数量
-    std::atomic<uint32_t> m_receiver_pid;  // 接收者pid
-    std::atomic<uint32_t> m_senders_pid;  // 发送者pid，0默认有多个发送者
     std::atomic<uint32_t> m_flag; // 标志位
     // bit0：1允许发送，0不允许发送
     // bit1：1允许接收，0不允许接收
@@ -75,8 +73,6 @@ typedef struct {
     std::atomic<uint32_t> m_tail;  // 队尾指针
     std::atomic<uint32_t> m_slot_size; // 数据区大小
     std::atomic<uint32_t> m_slot_count; // 数据区数量
-    std::atomic<uint32_t> m_receiver_pid;  // 接收者pid
-    std::atomic<uint32_t> m_senders_pid;  // 发送者pid，0默认有多个发送者
     std::atomic<uint32_t> m_flag; // 标志位
     // bit0：1允许发送，0不允许发送
     // bit1：1允许接收，0不允许接收
@@ -94,8 +90,6 @@ typedef struct {
     std::atomic<uint32_t> m_tail;  // 队尾指针
     std::atomic<uint32_t> m_slot_size; // 数据区大小
     std::atomic<uint32_t> m_slot_count; // 数据区数量
-    std::atomic<uint32_t> m_receiver_pid;  // 接收者pid
-    std::atomic<uint32_t> m_senders_pid;  // 发送者pid，0默认有多个发送者
     std::atomic<uint32_t> m_flag; // 标志位
     // bit0：1允许发送，0不允许发送
     // bit1：1允许接收，0不允许接收
@@ -211,42 +205,6 @@ public:
     void wakeup_recv();
 
     /**
-     * @brief 获取接收者 pid
-     * @return 接收者 pid，无效时返回 0
-     */
-    uint32_t get_receiver_pid() const;
-
-    /**
-     * @brief 设置接收者 pid
-     * @param receiver_pid 接收者 pid
-     */
-    void set_receiver_pid(uint32_t receiver_pid);
-
-    /**
-     * @brief 设置发送者 pid
-     * @param senders_pid 发送者 pid
-     */
-    void set_senders_pid(uint32_t senders_pid);
-
-    /**
-     * @brief 获取发送者 pid
-     * @return 发送者 pid（0 表示多个发送者），无效时返回 0
-     */
-    uint32_t get_senders_pid() const;
-
-    /**
-     * @brief 进程崩溃，这里重置恢复一下共享内存
-    */
-    void reset_shm();
-
-    /**
-     * @brief 根据共享内存名称匹配逻辑进程ID
-     * @param shm_name 共享内存名称
-     * @return 逻辑进程ID，无效返回INVALID_FD
-    */
-    uint8_t getLogicProcessId(const std::string& shm_name);
-
-    /**
      * @brief 获取当前时间戳
      * @return 相对开机的单调时钟微秒数（steady_clock / CLOCK_MONOTONIC）
     */
@@ -272,7 +230,6 @@ private:
     int m_shm_fd;
     void* m_shm_ptr;
     bool m_is_owner;
-    uint8_t m_logic_process_id;
     uint64_t m_slot_timeout;
 };
 

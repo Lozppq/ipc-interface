@@ -21,8 +21,8 @@ StreamShmCreator::StreamShmCreator(const std::string& name, uint32_t slot_size, 
     m_total_size(0), 
     m_shm_fd(-1),
     m_shm_ptr(NULL),
-    m_is_owner(false) {
-    m_logic_process_id = getLogicProcessId(name);
+    m_is_owner(false)
+{
     switch (m_slot_size) {
         case SIZE_64B:
             m_slot_timeout = TIMEOUT_64B;
@@ -73,7 +73,6 @@ bool StreamShmCreator::create_shm(bool create) {
         sem_init(&header->m_sem, 1, 0);
         header->m_slot_size.store(m_slot_size, std::memory_order_relaxed);
         header->m_slot_count.store(m_slot_count, std::memory_order_relaxed);
-        header->m_receiver_pid.store(0, std::memory_order_relaxed);
         header->m_flag.store(Define::BIT0 | Define::BIT1, std::memory_order_relaxed);
     } else {
         if (header->m_flag.load(std::memory_order_acquire) == 0) {
@@ -227,43 +226,6 @@ void StreamShmCreator::wakeup_recv() {
     hdr->m_flag.fetch_and(~static_cast<uint32_t>(Define::BIT1), std::memory_order_release);
     sem_post(&hdr->m_sem);
 #endif
-}
-
-uint32_t StreamShmCreator::get_receiver_pid() const {
-    if (!valid()) {
-        return 0;
-    }
-    return static_cast<const SMALLRingQueueHeader*>(m_shm_ptr)->m_receiver_pid.load(std::memory_order_acquire);
-}
-
-uint32_t StreamShmCreator::get_senders_pid() const {
-    if (!valid()) {
-        return 0;
-    }
-    return static_cast<const SMALLRingQueueHeader*>(m_shm_ptr)->m_senders_pid.load(std::memory_order_acquire);
-}
-
-void StreamShmCreator::set_receiver_pid(uint32_t receiver_pid) {
-    if (!valid()) {
-        return;
-    }
-    static_cast<SMALLRingQueueHeader*>(m_shm_ptr)->m_receiver_pid.store(receiver_pid, std::memory_order_release);
-}
-
-void StreamShmCreator::set_senders_pid(uint32_t senders_pid) {
-    if (!valid()) {
-        return;
-    }
-    static_cast<SMALLRingQueueHeader*>(m_shm_ptr)->m_senders_pid.store(senders_pid, std::memory_order_release);
-}
-
-uint8_t StreamShmCreator::getLogicProcessId(const std::string& shm_name) {
-    for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
-        if (shm_name == Define::kShmNames[i]) {
-            return i;
-        }
-    }
-    return Define::INVALID_FD;
 }
 
 uint64_t StreamShmCreator::get_timestamp() {
