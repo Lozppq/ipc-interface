@@ -16,6 +16,9 @@
 #include <cstring>
 #include <algorithm>
 #include <memory>
+#if defined(__linux__)
+#include <sched.h>
+#endif
 namespace IpcInterface {
 namespace MulProcess {
 
@@ -193,6 +196,11 @@ bool ShmManager::send(const std::shared_ptr<TagSendMessage>& buf_msg, const std:
         if (buf_msg->m_shm->send(buf_msg) >= 0) {
             return true;
         }
+#if defined(__linux__)
+        if (retry + 1 < kSendMaxRetry) {
+            sched_yield();
+        }
+#endif
     }
     return false;
 }

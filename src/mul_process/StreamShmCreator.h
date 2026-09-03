@@ -11,6 +11,7 @@
 #include "../standard/api.h"
 #include "TagMessage.h"
 #if defined(__linux__)
+#include <sched.h>
 #include <semaphore.h>
 #endif
 
@@ -392,6 +393,9 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
                 head = not_commit_head;
                 break;
             }
+#if defined(__linux__)
+            sched_yield();
+#endif
         }
     }
     hdr->m_head.store(head, std::memory_order_release);
