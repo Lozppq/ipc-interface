@@ -57,6 +57,9 @@ void SendWork::SendMessage(const std::shared_ptr<TagSendMessage>& tag) {
         if (tag->m_shm->send(tag) >= 0) {
             return;
         }
+#if defined(__linux__)
+        sched_yield();
+#endif
     }
     LOG_DEBUG("SendWork: send failed data size=%u, toShm=%s",
               tag->m_data.size(), tag->m_shm->get_shm_name().c_str());
