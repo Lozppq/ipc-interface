@@ -34,6 +34,7 @@ LIB_SRCS := \
 	src/model/EventHandle.cpp \
 	src/model/EpollHandle.cpp \
 	src/model/TimerHandle.cpp \
+	src/model/SemaphoreHandle.cpp \
 	src/model/EpollControl.cpp \
 	src/model/MessageThread.cpp \
 	src/mul_process/ShmManager.cpp \

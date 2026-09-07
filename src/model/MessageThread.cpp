@@ -6,6 +6,7 @@
 #include "MessageThread.h"
 #include "EventHandle.h"
 #include "../log/Log_Print.h"
+#include "SemaphoreHandle.h"
 
 namespace IpcInterface {
 namespace Model {
@@ -40,15 +41,15 @@ int MessageThread::startTimer(uint32_t interval_ms, bool periodic, TimerCallback
         return m_epoll.startTimer(interval_ms, periodic, std::move(callback));
     }
     int fd = -1;
-    EventHandle done;
+    SemaphoreHandle done(0, SemaphoreHandle::ShareThread);
     if (!m_epoll.post([this, &done, &fd, interval_ms, periodic, cb = std::move(callback)]() mutable {
         fd = m_epoll.startTimer(interval_ms, periodic, std::move(cb));
-        done.wake();
+        done.post();
     })) {
         LOG_ERROR("MessageThread::startTimer queue full, drop timer");
         return -1;
     }
-    done.wait(-1);
+    done.wait();
     return fd;
 }
 
