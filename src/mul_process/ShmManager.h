@@ -196,12 +196,15 @@ private:
     using ShmInfoMap = std::map<std::string, std::shared_ptr<StreamShmCreator>>;
     using ReceiveWorkMap = std::map<std::string, std::shared_ptr<ReceiveWork>>;
 
-    std::shared_ptr<ShmInfoMap> cloneShmInfos() const;
-    void storeShmInfos(std::shared_ptr<ShmInfoMap> m);
-    std::shared_ptr<ReceiveWorkMap> cloneReceiveWorks() const;
-    void storeReceiveWorks(std::shared_ptr<ReceiveWorkMap> m);
+    std::shared_ptr<const ShmInfoMap> shmInfos() const;
+    bool addShmInfo(const std::string& name, std::shared_ptr<StreamShmCreator> shm);
+    std::shared_ptr<StreamShmCreator> removeShmInfo(const std::string& name);
 
-    // 无锁快照：单写（本线程）多读（业务 send）
+    std::shared_ptr<const ReceiveWorkMap> receiveWorks() const;
+    bool addReceiveWork(const std::string& name, std::shared_ptr<ReceiveWork> work);
+    std::shared_ptr<ReceiveWork> removeReceiveWork(const std::string& name);
+
+    // 无锁快照：CAS 增删，读路径持有 const 快照
     std::shared_ptr<const ShmInfoMap> m_shm_infos;
     std::shared_ptr<const ReceiveWorkMap> m_receive_works;
 

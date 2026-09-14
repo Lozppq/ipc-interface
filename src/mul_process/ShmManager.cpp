@@ -32,7 +32,7 @@ ShmManager::~ShmManager() {
         m_receive_work->stop();
         delete m_receive_work;
     }
-    auto recv_works = std::atomic_load(&m_receive_works);
+    auto recv_works = receiveWorks();
     if (recv_works) {
         for (const auto& kv : *recv_works) {
             if (kv.second) {
@@ -42,22 +42,70 @@ ShmManager::~ShmManager() {
     }
 }
 
-std::shared_ptr<ShmManager::ShmInfoMap> ShmManager::cloneShmInfos() const {
-    auto old = std::atomic_load(&m_shm_infos);
-    return std::make_shared<ShmInfoMap>(old ? *old : ShmInfoMap{});
+std::shared_ptr<const ShmManager::ShmInfoMap> ShmManager::shmInfos() const {
+    return std::atomic_load(&m_shm_infos);
 }
 
-void ShmManager::storeShmInfos(std::shared_ptr<ShmInfoMap> m) {
-    std::atomic_store(&m_shm_infos, std::shared_ptr<const ShmInfoMap>(std::move(m)));
+bool ShmManager::addShmInfo(const std::string& name, std::shared_ptr<StreamShmCreator> shm) {
+    for (;;) {
+        auto expected = std::atomic_load(&m_shm_infos);
+        auto neu = std::make_shared<ShmInfoMap>(expected ? *expected : ShmInfoMap{});
+        if (!neu->emplace(name, shm).second)
+            return false;
+        std::shared_ptr<const ShmInfoMap> desired = neu;
+        if (std::atomic_compare_exchange_weak(&m_shm_infos, &expected, desired))
+            return true;
+    }
 }
 
-std::shared_ptr<ShmManager::ReceiveWorkMap> ShmManager::cloneReceiveWorks() const {
-    auto old = std::atomic_load(&m_receive_works);
-    return std::make_shared<ReceiveWorkMap>(old ? *old : ReceiveWorkMap{});
+std::shared_ptr<StreamShmCreator> ShmManager::removeShmInfo(const std::string& name) {
+    for (;;) {
+        auto expected = std::atomic_load(&m_shm_infos);
+        if (!expected)
+            return nullptr;
+        auto it = expected->find(name);
+        if (it == expected->end())
+            return nullptr;
+        auto removed = it->second;
+        auto neu = std::make_shared<ShmInfoMap>(*expected);
+        neu->erase(name);
+        std::shared_ptr<const ShmInfoMap> desired = neu;
+        if (std::atomic_compare_exchange_weak(&m_shm_infos, &expected, desired))
+            return removed;
+    }
 }
 
-void ShmManager::storeReceiveWorks(std::shared_ptr<ReceiveWorkMap> m) {
-    std::atomic_store(&m_receive_works, std::shared_ptr<const ReceiveWorkMap>(std::move(m)));
+std::shared_ptr<const ShmManager::ReceiveWorkMap> ShmManager::receiveWorks() const {
+    return std::atomic_load(&m_receive_works);
+}
+
+bool ShmManager::addReceiveWork(const std::string& name, std::shared_ptr<ReceiveWork> work) {
+    for (;;) {
+        auto expected = std::atomic_load(&m_receive_works);
+        auto neu = std::make_shared<ReceiveWorkMap>(expected ? *expected : ReceiveWorkMap{});
+        if (!neu->emplace(name, work).second)
+            return false;
+        std::shared_ptr<const ReceiveWorkMap> desired = neu;
+        if (std::atomic_compare_exchange_weak(&m_receive_works, &expected, desired))
+            return true;
+    }
+}
+
+std::shared_ptr<ReceiveWork> ShmManager::removeReceiveWork(const std::string& name) {
+    for (;;) {
+        auto expected = std::atomic_load(&m_receive_works);
+        if (!expected)
+            return nullptr;
+        auto it = expected->find(name);
+        if (it == expected->end())
+            return nullptr;
+        auto removed = it->second;
+        auto neu = std::make_shared<ReceiveWorkMap>(*expected);
+        neu->erase(name);
+        std::shared_ptr<const ReceiveWorkMap> desired = neu;
+        if (std::atomic_compare_exchange_weak(&m_receive_works, &expected, desired))
+            return removed;
+    }
 }
 
 void ShmManager::initParams(const std::string& shm_name) {
@@ -101,7 +149,7 @@ void ShmManager::postCreatePidNameInfo(PidNameInfo info) {
             it->m_receiver_logic = info.m_receiver_logic;
         }
         // 需要创建或更新共享内存
-        auto shms = std::atomic_load(&m_shm_infos);
+        auto shms = shmInfos();
         std::shared_ptr<StreamShmCreator> shm;
         if (shms) {
             auto it = shms->find(info.m_shm_name);
@@ -110,9 +158,7 @@ void ShmManager::postCreatePidNameInfo(PidNameInfo info) {
             }
         }
         if (!shm) {
-            auto neu = cloneShmInfos();
-            neu->emplace(info.m_shm_name, std::make_shared<StreamShmCreator>(info.m_shm_name));
-            storeShmInfos(neu);
+            addShmInfo(info.m_shm_name, std::make_shared<StreamShmCreator>(info.m_shm_name));
             openStreamShmRetry(info, true);
         } else {
             shm->set_flag(Define::BIT0 | Define::BIT1);
@@ -127,18 +173,16 @@ void ShmManager::OnThreadInit() {
 }
 
 void ShmManager::initShm(bool create) {
-    auto neu = cloneShmInfos();
     for (auto& info : m_pidNameInfos) {
-        neu->emplace(info.m_shm_name, std::make_shared<StreamShmCreator>(info.m_shm_name));
+        addShmInfo(info.m_shm_name, std::make_shared<StreamShmCreator>(info.m_shm_name));
     }
-    storeShmInfos(neu);
     for (auto& info : m_pidNameInfos) {
         openStreamShmRetry(info, create);
     }
 }
 
 void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
-    auto shms = std::atomic_load(&m_shm_infos);
+    auto shms = shmInfos();
     if (!shms) {
         return;
     }
@@ -166,7 +210,7 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
 
 
 void ShmManager::initReceiveWork() {
-    auto shms = std::atomic_load(&m_shm_infos);
+    auto shms = shmInfos();
     if (!shms || shms->find(m_shm_name) == shms->end()) {
         LOG_ERROR("ShmManager: initReceiveWork failed, shm_name=%s not found", m_shm_name.c_str());
         return;
@@ -183,7 +227,7 @@ bool ShmManager::send(const std::shared_ptr<TagSendMessage>& buf_msg, const std:
     if (!buf_msg || buf_msg->m_data.empty() || buf_msg->m_message_id >= Define::MESSAGE_ID_INVALID || shm_name.empty()) {
         return false;
     }
-    auto shms = std::atomic_load(&m_shm_infos);
+    auto shms = shmInfos();
     if (!shms) {
         return false;
     }
@@ -278,11 +322,7 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
                 break;
             }
             m_pidNameInfos.push_back(info);
-            {
-                auto neu = cloneShmInfos();
-                neu->emplace(shm_name, std::make_shared<StreamShmCreator>(shm_name, slot_size, slot_count));
-                storeShmInfos(neu);
-            }
+            addShmInfo(shm_name, std::make_shared<StreamShmCreator>(shm_name, slot_size, slot_count));
             openStreamShmRetry(info, true);
 
             // 响应业务进程请求，将消息发送给接收者进程和发送者进程
@@ -314,29 +354,13 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag) {
             }
 
             // 找到对应的接收消息线程
-            {
-                auto works = cloneReceiveWorks();
-                auto it_receive_work = works->find(shm_name);
-                if (it_receive_work != works->end()) {
-                    auto work = it_receive_work->second;
-                    works->erase(it_receive_work);
-                    storeReceiveWorks(works);
-                    if (work) {
-                        work->stop();
-                    }
-                }
+            if (auto work = removeReceiveWork(shm_name)) {
+                work->stop();
             }
             
             // 找到对应的共享内存的句柄
-            {
-                auto shms = cloneShmInfos();
-                auto it_shm = shms->find(shm_name);
-                if (it_shm != shms->end() && it_shm->second) {
-                    auto shm = it_shm->second;
-                    shms->erase(it_shm);
-                    storeShmInfos(shms);
-                    shm->delete_shm();
-                }
+            if (auto shm = removeShmInfo(shm_name)) {
+                shm->delete_shm();
             }
 
             if (it_pid->m_sender_logic == Define::INVALID_FD) {
@@ -404,11 +428,7 @@ void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag) {
             } else {
                 return;
             }
-            {
-                auto neu = cloneShmInfos();
-                neu->emplace(shm_name, std::make_shared<StreamShmCreator>(shm_name, slot_size, slot_count));
-                storeShmInfos(neu);
-            }
+            addShmInfo(shm_name, std::make_shared<StreamShmCreator>(shm_name, slot_size, slot_count));
             openStreamShmRetry(info, false);
         }
             break;
@@ -434,29 +454,13 @@ void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag) {
             m_pidNameInfos.erase(it_pid);
 
             // 找到对应的接收消息线程
-            {
-                auto works = cloneReceiveWorks();
-                auto it_receive_work = works->find(shm_name);
-                if (it_receive_work != works->end()) {
-                    auto work = it_receive_work->second;
-                    works->erase(it_receive_work);
-                    storeReceiveWorks(works);
-                    if (work) {
-                        work->stop();
-                    }
-                }
+            if (auto work = removeReceiveWork(shm_name)) {
+                work->stop();
             }
             
             // 找到对应的共享内存的句柄
-            {
-                auto shms = cloneShmInfos();
-                auto it_shm = shms->find(shm_name);
-                if (it_shm != shms->end() && it_shm->second) {
-                    auto shm = it_shm->second;
-                    shms->erase(it_shm);
-                    storeShmInfos(shms);
-                    shm->Close();
-                }
+            if (auto shm = removeShmInfo(shm_name)) {
+                shm->Close();
             }
 
             LOG_DEBUG("ShmManager: handleProcessMessage ReleaseShm success, shm_name = %s", shm_name.c_str());
@@ -469,7 +473,7 @@ void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag) {
 
 bool ShmManager::RequestAllocateShm(const std::string& sender_shm_name, const std::string& receiver_shm_name, uint32_t slot_size, uint32_t slot_count, const std::string& new_shm_name) {
     // 这里需要先判断一下共享内存是否已经存在，如果存在则直接返回，否则需要创建新的共享内存
-    auto shms = std::atomic_load(&m_shm_infos);
+    auto shms = shmInfos();
     if (shms && shms->find(new_shm_name) != shms->end()) {
         LOG_ERROR("ShmManager: RequestAllocateShm failed, shm_name = %s already exists", new_shm_name.c_str());
         return false;
@@ -520,7 +524,7 @@ bool ShmManager::RequestAllocateShm(const std::string& sender_shm_name, const st
 
 bool ShmManager::RequestReleaseShm(const std::string& shm_name) {
     // 这里需要先判断一下共享内存是否已经存在，如果存在则直接返回，否则需要创建新的共享内存
-    auto shms = std::atomic_load(&m_shm_infos);
+    auto shms = shmInfos();
     if (!shms || shms->find(shm_name) == shms->end()) {
         LOG_ERROR("ShmManager: RequestReleaseShm failed, shm_name = %s not exists", shm_name.c_str());
         return false;
@@ -560,7 +564,7 @@ void ShmManager::handleProcessCrash(uint8_t logic_id) {
     for (size_t i = 0; i < m_pidNameInfos.size(); ) {
         if (m_pidNameInfos[i].m_receiver_logic == logic_id) {
             uint8_t logic_process_id = getLogicProcessId(m_pidNameInfos[i].m_shm_name);
-            auto shms = std::atomic_load(&m_shm_infos);
+            auto shms = shmInfos();
             std::shared_ptr<StreamShmCreator> shm;
             if (shms) {
                 auto it_shm = shms->find(m_pidNameInfos[i].m_shm_name);
@@ -622,11 +626,11 @@ uint8_t ShmManager::getLogicProcessId(const std::string& shm_name) {
 }
 
 void ShmManager::createReceiveWork(std::string shm_name, ReceiveHandler receive_handler) {
-    auto works = std::atomic_load(&m_receive_works);
+    auto works = receiveWorks();
     if (works && works->find(shm_name) != works->end()) {
         return;
     }
-    auto shms = std::atomic_load(&m_shm_infos);
+    auto shms = shmInfos();
     if (!shms || shms->find(shm_name) == shms->end() || !shms->at(shm_name)) {
         postTimer(1000, [this, shm_name = std::move(shm_name), receive_handler = std::move(receive_handler)](int) mutable {
             createReceiveWork(std::move(shm_name), std::move(receive_handler));
@@ -634,10 +638,9 @@ void ShmManager::createReceiveWork(std::string shm_name, ReceiveHandler receive_
         return;
     }
     auto work = std::make_shared<ReceiveWork>(shms->at(shm_name), receive_handler);
-    auto neu = cloneReceiveWorks();
-    neu->emplace(shm_name, work);
-    storeReceiveWorks(neu);
-    work->start();
+    if (addReceiveWork(shm_name, work)) {
+        work->start();
+    }
 }
 
 void ShmManager::postRequestAllocateShm(std::string sender_shm_name, std::string receiver_shm_name, uint32_t slot_size, uint32_t slot_count, std::string new_shm_name) {
