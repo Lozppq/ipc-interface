@@ -88,19 +88,19 @@ public:
     void handleProcessCrash(uint8_t logic_id);
 
     /**
-     * @brief 外部线程投递一次请求申请分配共享内存
+     * @brief 请求申请分配共享内存（可任意线程直调）
     */
-    void postRequestAllocateShm(std::string sender_shm_name, std::string receiver_shm_name, uint32_t slot_size, uint32_t slot_count, std::string new_shm_name);
+    bool RequestAllocateShm(const std::string& sender_shm_name, const std::string& receiver_shm_name, uint32_t slot_size, uint32_t slot_count, const std::string& new_shm_name);
 
     /**
-     * @brief 外部线程投递一次请求释放共享内存
+     * @brief 请求释放共享内存（可任意线程直调）
     */
-    void postRequestReleaseShm(std::string shm_name);
+    bool RequestReleaseShm(const std::string& shm_name);
 
     /**
-     * @brief 外部线程投递一次根据共享内存名称创建接收消息线程
+     * @brief 按共享内存名称创建接收线程；已存在则返回已有实例，shm 未就绪返回空
     */
-    void postCreateReceiveWork(std::string shm_name, ReceiveHandler receive_handler);
+    std::shared_ptr<ReceiveWork> createReceiveWork(std::string shm_name, ReceiveHandler receive_handler);
 
     /**
      * @brief 设置同步标志回调函数
@@ -108,9 +108,12 @@ public:
     void setSyncFlagCallback(SyncFlagCallback callback);
 
     /**
-     * @brief 外部线程投递一次设置同步标志
+     * @brief 设置同步标志（可任意线程直调）
+     * @param shm_name 共享内存名称
+     * @param flag 同步标志
+     * @return 是否成功
     */
-    void postSetSyncFlag(std::string shm_name, uint8_t flag);
+    bool setSyncFlag(std::string shm_name, uint8_t flag);
 
 private:
     /**
@@ -126,38 +129,6 @@ private:
      * @return 共享内存名称，无效返回空字符串
      */
     std::string lookupShmNameByLogicId(uint8_t logic_id) const;
-    
-    /**
-     * @brief 请求申请分配共享内存
-     * @param sender_shm_name 发送者共享内存名称
-     * @param receiver_shm_name 接收者共享内存名称
-     * @param slot_size 单槽位大小
-     * @param slot_count 槽位数量
-     * @param new_shm_name 申请的共享内存名称
-     * @return 是否成功申请共享内存
-    */
-    bool RequestAllocateShm(const std::string& sender_shm_name, const std::string& receiver_shm_name, uint32_t slot_size, uint32_t slot_count, const std::string& new_shm_name);
-
-    /**
-     * @brief 请求释放共享内存
-     * @param shm_name 共享内存名称
-     * @return 是否成功释放共享内存
-    */
-    bool RequestReleaseShm(const std::string& shm_name);
-
-    /**
-     * @brief 根据共享内存名称创建接收消息线程
-     * @param shm_name 共享内存名称
-     * @param receive_handler 接收消息回调函数
-    */
-    void createReceiveWork(std::string shm_name, ReceiveHandler receive_handler);
-
-    /**
-     * @brief 设置同步标志
-     * @param shm_name 共享内存名称
-     * @param flag 同步标志
-    */
-    void setSyncFlag(std::string shm_name, uint8_t flag);
 
 protected:
     void OnThreadInit() override;
