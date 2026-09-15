@@ -32,7 +32,7 @@ int main(int argc, char* argv[])
     IpcInterface::MulProcess::ShmManager::getInstance()->start();
 
     // 阻塞等待子进程退出；业务进程崩溃后回收 shm 并重新拉起
-    while (1)
+    while (true)
     {
         pid_t pid = waitpid(-1, NULL, 0);
         if (pid > 0)

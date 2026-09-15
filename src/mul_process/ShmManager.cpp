@@ -50,7 +50,7 @@ std::shared_ptr<const ShmManager::ShmInfoMap> ShmManager::shmInfos() const
 
 bool ShmManager::addShmInfo(const std::string& name, std::shared_ptr<StreamShmCreator> shm)
 {
-    while (1)
+    while (true)
     {
         auto expected = std::atomic_load(&m_shm_infos);
         auto neu = std::make_shared<ShmInfoMap>(expected ? *expected : ShmInfoMap{});
@@ -64,7 +64,7 @@ bool ShmManager::addShmInfo(const std::string& name, std::shared_ptr<StreamShmCr
 
 std::shared_ptr<StreamShmCreator> ShmManager::removeShmInfo(const std::string& name)
 {
-    while (1)
+    while (true)
     {
         auto expected = std::atomic_load(&m_shm_infos);
         if (!expected)
@@ -88,7 +88,7 @@ std::shared_ptr<const ShmManager::ReceiveWorkMap> ShmManager::receiveWorks() con
 
 bool ShmManager::addReceiveWork(const std::string& name, std::shared_ptr<ReceiveWork> work)
 {
-    while (1)
+    while (true)
     {
         auto expected = std::atomic_load(&m_receive_works);
         auto neu = std::make_shared<ReceiveWorkMap>(expected ? *expected : ReceiveWorkMap{});
@@ -102,7 +102,7 @@ bool ShmManager::addReceiveWork(const std::string& name, std::shared_ptr<Receive
 
 std::shared_ptr<ReceiveWork> ShmManager::removeReceiveWork(const std::string& name)
 {
-    while (1)
+    while (true)
     {
         auto expected = std::atomic_load(&m_receive_works);
         if (!expected)

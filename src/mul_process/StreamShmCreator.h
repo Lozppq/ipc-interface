@@ -258,7 +258,7 @@ int StreamShmCreator::send_impl(Header* hdr, std::shared_ptr<TagSendMessage> buf
     if (slot_need == 0 || slot_need > MAX_SLICE_COUNT)
         return -1;
 
-    while (1)
+    while (true)
     {
         old_tail = hdr->m_tail.load(std::memory_order_acquire);
         new_tail = (old_tail + slot_need) % m_slot_count;
@@ -334,7 +334,7 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
     uint32_t head, slice_count = 0, slices_done = 0, t_msg_index = 0, tail_last = 0;
     head = hdr->m_head.load(std::memory_order_acquire);
     // 获取数据
-    while (1)
+    while (true)
     {
         // 如果已经提交了标志位
         if (hdr->m_data[head].m_commit.load(std::memory_order_acquire) == COMMIT_TRUE)

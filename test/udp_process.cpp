@@ -100,7 +100,7 @@ int main(int argc, char* argv[])
 
     std::thread([&]()
     {
-        while (1)
+        while (true)
         {
             sleep(1);
             const uint64_t rbytes = recv_bytes.exchange(0, std::memory_order_relaxed);
@@ -116,7 +116,7 @@ int main(int argc, char* argv[])
     std::thread([fd, &recv_bytes, &recv_pkts]()
     {
         uint8_t buf[64 * 1024];
-        while (1)
+        while (true)
         {
             const ssize_t n = ::recvfrom(fd, buf, sizeof(buf), 0, nullptr, nullptr);
             if (n <= 0)
@@ -133,7 +133,7 @@ int main(int argc, char* argv[])
     std::mt19937 rng{std::random_device{}()};
     std::uniform_int_distribution<int> dist(500, MAX_N);
 
-    while (1)
+    while (true)
     {
         const uint16_t n = static_cast<uint16_t>(dist(rng));
         std::vector<uint8_t> msg((1u + n) * sizeof(uint16_t));

@@ -51,7 +51,7 @@ int main()
 
     std::thread([&]()
     {
-        while (1)
+        while (true)
         {
             sleep(1);
             const uint64_t rbytes = recv_bytes.exchange(0, std::memory_order_relaxed);
@@ -69,7 +69,7 @@ int main()
     std::mt19937 rng{std::random_device{}()};
     std::uniform_int_distribution<int> dist(500, MAX_N);
 
-    while (1)
+    while (true)
     {
         auto tag = std::make_shared<IpcInterface::MulProcess::TagSendMessage>();
         const uint16_t n = static_cast<uint16_t>(dist(rng));

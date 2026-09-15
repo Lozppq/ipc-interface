@@ -45,7 +45,7 @@ bool LockFreeQueue<T>::push(const T& item)
     size_t tail = m_tail.load(std::memory_order_acquire);
     size_t head;
 
-    while (1)
+    while (true)
     {
         head = m_head.load(std::memory_order_acquire);
         // 通过减法判断是否满：tail - head >= m_capacity 时满
@@ -72,7 +72,7 @@ bool LockFreeQueue<T>::push(T&& item)
     size_t tail = m_tail.load(std::memory_order_acquire);
     size_t head;
 
-    while (1)
+    while (true)
     {
         head = m_head.load(std::memory_order_acquire);
         if (((tail - head) & ~m_mask) != 0)
@@ -96,7 +96,7 @@ bool LockFreeQueue<T>::pop(T& item)
     size_t head = m_head.load(std::memory_order_acquire);
     size_t tail, idx;
 
-    while (1)
+    while (true)
     {
         tail = m_tail.load(std::memory_order_acquire);
         // 队列为空
