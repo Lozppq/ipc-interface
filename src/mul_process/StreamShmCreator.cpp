@@ -73,7 +73,7 @@ bool StreamShmCreator::create_shm(bool create) {
         sem_init(&header->m_sem, 1, 0);
         header->m_slot_size.store(m_slot_size, std::memory_order_relaxed);
         header->m_slot_count.store(m_slot_count, std::memory_order_relaxed);
-        header->m_flag.store(Define::BIT0 | Define::BIT1, std::memory_order_relaxed);
+        header->m_flag.store(Define::BIT0 | Define::BIT1, std::memory_order_release);
     } else {
         if (header->m_flag.load(std::memory_order_acquire) == 0) {
             return false;

@@ -12,18 +12,19 @@ int main(int argc, char* argv[]) {
 #if defined(__linux__)
     IpcInterface::Log::setLogPrefix("daemon");
     IpcInterface::MulProcess::ShmManager::getInstance()->initParams(IpcInterface::Define::Daemon);
-    // 子进程拉起后，把 shm_name / 逻辑槽位登记到 ShmManager
-    IpcInterface::MulProcess::ProcessManager::getInstance()->setCreateProcessCallback(
-        [](std::string shm_name, uint8_t logic_id) {
-            IpcInterface::MulProcess::ShmManager::getInstance()->postCreatePidNameInfo(
-                {shm_name, IpcInterface::Define::INVALID_FD, logic_id});
+    IpcInterface::MulProcess::ShmManager::getInstance()->setStartProcessCallback(
+        [](std::string shm_name, uint8_t) {
+            IpcInterface::MulProcess::ProcessManager::getInstance()->postCreateProcess(std::move(shm_name));
         });
-    // 设置同步标志回调函数
     IpcInterface::MulProcess::ShmManager::getInstance()->setSyncFlagCallback([](uint8_t logic_id, uint8_t flag) {
         IpcInterface::MulProcess::ProcessManager::getInstance()->setProcessSyncFlag(logic_id, flag);
     });
-    IpcInterface::MulProcess::ShmManager::getInstance()->start();
+    IpcInterface::MulProcess::ProcessManager::getInstance()->setProcessStartedCallback(
+        [](std::string shm_name) {
+            IpcInterface::MulProcess::ShmManager::getInstance()->enableChannel(std::move(shm_name));
+        });
     IpcInterface::MulProcess::ProcessManager::getInstance()->start();
+    IpcInterface::MulProcess::ShmManager::getInstance()->start();
 
     // 阻塞等待子进程退出；业务进程崩溃后回收 shm 并重新拉起
     while (true) {

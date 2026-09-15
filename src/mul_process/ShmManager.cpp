@@ -28,10 +28,6 @@ ShmManager::ShmManager()
 }
 
 ShmManager::~ShmManager() {
-    if (m_receive_work) {
-        m_receive_work->stop();
-        delete m_receive_work;
-    }
     auto recv_works = receiveWorks();
     if (recv_works) {
         for (const auto& kv : *recv_works) {
@@ -110,12 +106,8 @@ std::shared_ptr<ReceiveWork> ShmManager::removeReceiveWork(const std::string& na
 
 void ShmManager::initParams(const std::string& shm_name) {
     m_shm_name = shm_name;
-    if (m_shm_name == Define::Daemon) {
-        addPidNameInfo({shm_name, Define::INVALID_FD, Define::Daemon_Fd});
-    } else {
-        for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
-            addPidNameInfo({Define::kShmNames[i], Define::INVALID_FD, static_cast<uint8_t>(i)});
-        }
+    for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
+        addPidNameInfo({Define::kShmNames[i], Define::INVALID_FD, static_cast<uint8_t>(i)});
     }
 }
 
@@ -169,14 +161,12 @@ void ShmManager::postCreatePidNameInfo(PidNameInfo info) {
 
 void ShmManager::OnThreadInit() {
     initShm(m_shm_name == Define::Daemon);
-    initReceiveWork();
 }
 
 void ShmManager::initShm(bool create) {
-    for (auto& info : m_pidNameInfos) {
+    for (auto& info : m_pidNameInfos) 
+    {
         addShmInfo(info.m_shm_name, std::make_shared<StreamShmCreator>(info.m_shm_name));
-    }
-    for (auto& info : m_pidNameInfos) {
         openStreamShmRetry(info, create);
     }
 }
@@ -191,13 +181,20 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
         return;
     }
     auto shm = it->second;
-    // 如果共享内存已经打开，则直接返回
     if (shm->valid()) {
+        if (info.m_shm_name == m_shm_name) {
+            initReceiveWork();
+        }
+        tryStartFixedProcesses();
         return;
     }
     if (shm->Open(create)) {
         LOG_DEBUG("ShmManager: openStreamShmRetry success, name=%s, sender_logic=%u, receiver_logic=%u",
             info.m_shm_name.c_str(), info.m_sender_logic, info.m_receiver_logic);
+        if (info.m_shm_name == m_shm_name) {
+            initReceiveWork();
+        }
+        tryStartFixedProcesses();
     } else {
         LOG_ERROR("ShmManager: openStreamShmRetry failed, name=%s, sender_logic=%u, receiver_logic=%u",
             info.m_shm_name.c_str(), info.m_sender_logic, info.m_receiver_logic);
@@ -208,15 +205,39 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create) {
     }
 }
 
-
-void ShmManager::initReceiveWork() {
-    auto shms = shmInfos();
-    if (!shms || shms->find(m_shm_name) == shms->end()) {
-        LOG_ERROR("ShmManager: initReceiveWork failed, shm_name=%s not found", m_shm_name.c_str());
+void ShmManager::tryStartFixedProcesses() {
+    if (m_shm_name != Define::Daemon || !m_start_process_callback || m_fixed_processes_started) {
         return;
     }
-    m_receive_work = new ReceiveWork(shms->at(m_shm_name), std::bind(&ShmManager::onReceiveMessage, this, std::placeholders::_1));
-    m_receive_work->start();
+    auto shms = shmInfos();
+    if (!shms) {
+        return;
+    }
+    for (uint32_t i = 0; i < Define::kShmNameCount; ++i) {
+        if (i == Define::Daemon_Fd) {
+            continue;
+        }
+        auto it = shms->find(Define::kShmNames[i]);
+        if (it == shms->end() || !it->second || !it->second->valid()) {
+            return;
+        }
+    }
+    m_fixed_processes_started = true;
+    for (uint32_t i = 0; i < Define::kShmNameCount; ++i) {
+        if (i == Define::Daemon_Fd) {
+            continue;
+        }
+        m_start_process_callback(Define::kShmNames[i], static_cast<uint8_t>(i));
+    }
+}
+
+
+void ShmManager::initReceiveWork() {
+    if (createReceiveWork(m_shm_name, std::bind(&ShmManager::onReceiveMessage, this, std::placeholders::_1))) {
+        return;
+    }
+    LOG_ERROR("ShmManager: initReceiveWork failed, shm_name=%s", m_shm_name.c_str());
+    postTimer(1000, [this](int) { initReceiveWork(); });
 }
 
 void ShmManager::setReceiveHandler(ReceiveHandler handler) {
@@ -628,38 +649,43 @@ uint8_t ShmManager::getLogicProcessId(const std::string& shm_name) {
 std::shared_ptr<ReceiveWork> ShmManager::createReceiveWork(std::string shm_name, ReceiveHandler receive_handler) {
     if (auto works = receiveWorks()) {
         auto it = works->find(shm_name);
-        if (it != works->end())
-            return it->second;
-    }
-    auto shms = shmInfos();
-    if (!shms) {
-        return nullptr;
-    }
-    auto it = shms->find(shm_name);
-    if (it == shms->end() || !it->second) {
-        return nullptr;
-    }
-
-    auto receive_works = receiveWorks();
-    if (receive_works) {
-        auto it = receive_works->find(shm_name);
-        if (it != receive_works->end()) 
-        {
-            if (!it->second->isRunning())
+        if (it != works->end()) {
+            if (it->second && !it->second->isRunning())
                 it->second->start();
             return it->second;
         }
-        else 
-        {
-            auto work = std::make_shared<ReceiveWork>(it->second, std::move(receive_handler));
-            if (addReceiveWork(shm_name, work)) 
-            {
-                work->start();
-                return work;
-            }
-        }
+    }
+    auto shms = shmInfos();
+    if (!shms)
+        return nullptr;
+    auto shm_it = shms->find(shm_name);
+    if (shm_it == shms->end() || !shm_it->second || !shm_it->second->valid())
+        return nullptr;
+
+    auto work = std::make_shared<ReceiveWork>(shm_it->second, std::move(receive_handler));
+    if (addReceiveWork(shm_name, work)) {
+        work->start();
+        return work;
+    }
+    if (auto works = receiveWorks()) {
+        auto it = works->find(shm_name);
+        if (it != works->end())
+            return it->second;
     }
     return nullptr;
+}
+
+void ShmManager::setStartProcessCallback(StartProcessCallback callback) {
+    m_start_process_callback = std::move(callback);
+}
+
+void ShmManager::enableChannel(const std::string& shm_name) {
+    auto shms = shmInfos();
+    if (!shms)
+        return;
+    auto it = shms->find(shm_name);
+    if (it != shms->end() && it->second)
+        it->second->set_flag(Define::BIT0 | Define::BIT1);
 }
 
 void ShmManager::setSyncFlagCallback(SyncFlagCallback callback) 

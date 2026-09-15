@@ -19,8 +19,6 @@ typedef struct {
 
 class ProcessManager : public Model::MessageThread {
 public:
-    // 创建进程后回调：shm_name, 逻辑进程槽位（不是 OS pid）
-    using CreateProcessCallback = std::function<void(std::string shm_name, uint8_t logic_id)>;
     ProcessManager();
     ~ProcessManager();
 
@@ -34,10 +32,15 @@ public:
     ProcessManager& operator=(const ProcessManager&) = delete;
 
     /**
-     * @brief 创建进程以后得回调函数
-     * @param callback 回调函数
-     */
-    void setCreateProcessCallback(CreateProcessCallback callback);
+     * @brief shm 就绪后投递拉起对应业务进程（可任意线程调用）
+    */
+    void postCreateProcess(std::string shm_name);
+
+    /**
+     * @brief 即将 fork 前回调（shm_name），用于恢复通道标志等
+    */
+    using ProcessStartedCallback = std::function<void(std::string shm_name)>;
+    void setProcessStartedCallback(ProcessStartedCallback callback);
 
     /**
      * @brief 获取是否允许创建进程
@@ -77,11 +80,6 @@ protected:
     void handleProcessCrash(uint32_t pid);
 
     /**
-     * @brief 初始化创建所需的所有进程
-    */
-    void initCreateProcess();
-
-    /**
      * @brief 启动进程函数
      * @param process_executable_name 进程可执行文件名称
      * @return 进程id
@@ -104,7 +102,7 @@ protected:
     uint8_t getLogicProcessId(const std::string& shm_name) const;
 
 private:
-    CreateProcessCallback m_create_process_callback;
+    ProcessStartedCallback m_process_started_callback;
     std::vector<ProcessInfo> m_process_infos;
     // 进程同步信息共享内存
     std::shared_ptr<Model::ShmCreator<Define::ProcessSyncInfo>> m_process_sync_shm_creator;

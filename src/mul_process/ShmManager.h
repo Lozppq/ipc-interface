@@ -17,6 +17,7 @@
 #include <string>
 #include <memory>
 #include <map>
+#include <functional>
 
 
 namespace IpcInterface {
@@ -30,6 +31,7 @@ typedef struct {
 } PidNameInfo;
 
 using SyncFlagCallback = std::function<void(uint8_t logic_id, uint8_t flag)>;
+using StartProcessCallback = std::function<void(std::string shm_name, uint8_t logic_id)>;
 
 class ShmManager : public Model::MessageThread {
 public:
@@ -103,6 +105,16 @@ public:
     std::shared_ptr<ReceiveWork> createReceiveWork(std::string shm_name, ReceiveHandler receive_handler);
 
     /**
+     * @brief 固定通道 shm 创建完成后回调进程管理模块拉起对应进程（仅守护进程）
+    */
+    void setStartProcessCallback(StartProcessCallback callback);
+
+    /**
+     * @brief 恢复固定通道收发标志（进程即将拉起时调用）
+    */
+    void enableChannel(const std::string& shm_name);
+
+    /**
      * @brief 设置同步标志回调函数
     */
     void setSyncFlagCallback(SyncFlagCallback callback);
@@ -151,6 +163,7 @@ private:
     void initReceiveWork();
 
     void openStreamShmRetry(PidNameInfo info, bool create);
+    void tryStartFixedProcesses();
 
     /**
      * @brief 处理守护进程消息
@@ -180,11 +193,12 @@ private:
     std::shared_ptr<const ReceiveWorkMap> m_receive_works;
 
     std::string m_shm_name;  // 本进程的消息接口名称
-    ReceiveWork* m_receive_work{NULL};
     // 初始化进程id与消息接口名称映射
     std::vector<PidNameInfo> m_pidNameInfos;
     ReceiveHandler m_receive_handler{NULL};
     SyncFlagCallback m_sync_flag_callback{NULL};
+    StartProcessCallback m_start_process_callback{NULL};
+    bool m_fixed_processes_started{false};
 };
 
 } // namespace MulProcess

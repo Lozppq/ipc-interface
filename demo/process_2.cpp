@@ -18,24 +18,11 @@ int main() {
     IpcInterface::Log::setLogPrefix("process_2");
     auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
     mgr->initParams(IpcInterface::Define::Process2);
-    mgr->start();
 
     std::atomic<uint64_t> recv_bytes{0};
     std::atomic<uint64_t> recv_pkts{0};
     std::atomic<uint64_t> send_bytes{0};
     std::atomic<uint64_t> send_pkts{0};
-    std::thread([&]() {
-        while (true) {
-            sleep(1);
-            const uint64_t rbytes = recv_bytes.exchange(0, std::memory_order_relaxed);
-            const uint64_t rpkts = recv_pkts.exchange(0, std::memory_order_relaxed);
-            const uint64_t sbytes = send_bytes.exchange(0, std::memory_order_relaxed);
-            const uint64_t spkts = send_pkts.exchange(0, std::memory_order_relaxed);
-            LOG_INFO("recv rate=%.3f MB/s pkt=%llu send=%.3f MB/s pkt=%llu",
-                     rbytes / (1024.0 * 1024.0), static_cast<unsigned long long>(rpkts),
-                     sbytes / (1024.0 * 1024.0), static_cast<unsigned long long>(spkts));
-        }
-    }).detach();
 
     mgr->setReceiveHandler([&recv_bytes, &recv_pkts](std::shared_ptr<IpcInterface::MulProcess::TagReceiveMessage> tag) {
         if (!tag) return;
@@ -55,6 +42,20 @@ int main() {
             return;
         }
     });
+    mgr->start();
+
+    std::thread([&]() {
+        while (true) {
+            sleep(1);
+            const uint64_t rbytes = recv_bytes.exchange(0, std::memory_order_relaxed);
+            const uint64_t rpkts = recv_pkts.exchange(0, std::memory_order_relaxed);
+            const uint64_t sbytes = send_bytes.exchange(0, std::memory_order_relaxed);
+            const uint64_t spkts = send_pkts.exchange(0, std::memory_order_relaxed);
+            LOG_INFO("recv rate=%.3f MB/s pkt=%llu send=%.3f MB/s pkt=%llu",
+                     rbytes / (1024.0 * 1024.0), static_cast<unsigned long long>(rpkts),
+                     sbytes / (1024.0 * 1024.0), static_cast<unsigned long long>(spkts));
+        }
+    }).detach();
 
     LOG_INFO("process_2 started, pid=%d", getpid());
 

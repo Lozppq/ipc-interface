@@ -30,31 +30,31 @@ ProcessManager* ProcessManager::getInstance() {
 
 void ProcessManager::OnThreadInit() {
     initProcessSyncShm();
-    initCreateProcess();
 }
 
-void ProcessManager::setCreateProcessCallback(CreateProcessCallback callback) {
-    m_create_process_callback = callback;
-}
-
-void ProcessManager::initCreateProcess() {
-    // 不拉起 daemon 自身，只拉起业务子进程（process_1 / process_2 / ...）
-    for (uint32_t i = 0; i < Define::kShmNameCount; i++) {
-        if (i == Define::Daemon_Fd) {
-            continue;
+void ProcessManager::postCreateProcess(std::string shm_name) {
+    post([this, shm_name = std::move(shm_name)]() {
+        const uint8_t logic_id = getLogicProcessId(shm_name);
+        if (logic_id >= Define::kProcessExecutableNameCount) {
+            LOG_ERROR("ProcessManager: postCreateProcess invalid shm_name: %s", shm_name.c_str());
+            return;
         }
-        createProcess(Define::kShmNames[i], Define::kProcessExecutableNames[i]);
-    }
+        createProcess(shm_name, Define::kProcessExecutableNames[logic_id]);
+    });
+}
+
+void ProcessManager::setProcessStartedCallback(ProcessStartedCallback callback) {
+    m_process_started_callback = std::move(callback);
 }
 
 void ProcessManager::createProcess(std::string shm_name, std::string process_executable_name){
     if (isAllowCreateProcess(shm_name)) {
+        if (m_process_started_callback) {
+            m_process_started_callback(shm_name);
+        }
         uint32_t pid = startProcess(process_executable_name);
         if (pid > 0) {
             m_process_infos.push_back({shm_name, process_executable_name, pid});
-            if (m_create_process_callback) {
-                m_create_process_callback(shm_name, getLogicProcessId(shm_name));
-            }
             LOG_DEBUG("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
         } else {
             LOG_ERROR("ProcessManager: failed, shm_name: %s, process_executable_name: %s, pid: %d", shm_name.c_str(), process_executable_name.c_str(), pid);
