@@ -20,11 +20,14 @@
 #endif
 #endif
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
 template<typename T>
-class ShmCreator {
+class ShmCreator
+{
 public:
     ShmCreator(const std::string& name, uint32_t total_size);
     ~ShmCreator();
@@ -43,35 +46,34 @@ public:
      * @return 成功返回true，失败返回false
      */
     bool Open(bool create);
-    
+
      /**
       * @brief 关闭共享内存，释放资源
       */
     void Close();
-     
+
      /**
       * @brief 检查是否有效
       * @return 有效返回true，否则返回false
       */
     bool valid() const;
- 
+
      /**
       * @brief 获取共享内存名称
       * @return 共享内存名称
       */
-    std::string get_shm_name(); 
-     
+    std::string get_shm_name();
+
 private:
      /**
       * @brief 创建共享内存结构体
       */
     bool create_shm(bool create);
-     
+
      /**
       * @brief 删除共享内存
       */
     void delete_shm();
-
 
 protected:
     uint32_t m_total_size;

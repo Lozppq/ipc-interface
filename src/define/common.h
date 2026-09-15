@@ -3,10 +3,13 @@
 #include <cstdint>
 #include <atomic>
 
-namespace IpcInterface {
-namespace Define {
+namespace IpcInterface
+{
+namespace Define
+{
 // 每一个Bit为1的枚举值
-enum : uint32_t {
+enum : uint32_t
+{
     BIT0 = 1u << 0,
     BIT1 = 1u << 1,
     BIT2 = 1u << 2,
@@ -76,7 +79,8 @@ constexpr const char* Process2ExecutableName = kProcessExecutableNames[2];
 constexpr const char* Process3ExecutableName = kProcessExecutableNames[3];
 
 // 逻辑进程槽位（与 kShmNames 下标一致，用作 ProcessSyncInfo::flags 下标；不是系统 fd）
-enum {
+enum
+{
     Daemon_Fd = 0,
     Process1_Fd,
     Process2_Fd,
@@ -94,7 +98,8 @@ static_assert(kShmNameCount == kProcessExecutableNameCount,
               "shm name count must match executable name count");
 
 // 用于控制各个进程之间的同步，解决某些进程需要依赖某个进程执行一些初始化才能正常运行的问题
-enum{
+enum
+{
     // 进程未同步标志
     PROCESS_SYNC_FLAG_NONE = 0,
     // 进程同步完成标志
@@ -102,7 +107,8 @@ enum{
 };
 
 // flags[Daemon_Fd / Process1_Fd / ...] 表示对应槽位是否同步完成
-typedef struct {
+typedef struct
+{
     std::atomic<uint8_t> m_flags[kShmNameCount];
 } ProcessSyncInfo;
 
@@ -114,7 +120,8 @@ constexpr uint8_t kProcessSyncFlagInitValues[] = {
     PROCESS_SYNC_FLAG_DONE,
 };
 
-static_assert(sizeof(kProcessSyncFlagInitValues) == kShmNameCount, "kProcessSyncFlagInitValues must match kShmNameCount");
+static_assert(sizeof(kProcessSyncFlagInitValues) == kShmNameCount,
+    "kProcessSyncFlagInitValues must match kShmNameCount");
 
 // 进程同步结构体共享内存名称
 constexpr const char* ProcessSyncShmName = "/ipc_process_sync";

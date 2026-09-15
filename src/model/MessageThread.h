@@ -11,9 +11,12 @@
 #include <functional>
 #include <cstdint>
 
-namespace IpcInterface {
-namespace Model {
-class MessageThread : public ThreadBase {
+namespace IpcInterface
+{
+namespace Model
+{
+class MessageThread : public ThreadBase
+{
 public:
     /**
      * @brief 构造函数

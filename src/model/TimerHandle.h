@@ -7,10 +7,13 @@
 
 #include <cstdint>
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
-class TimerHandle {
+class TimerHandle
+{
 public:
     TimerHandle();
     ~TimerHandle();

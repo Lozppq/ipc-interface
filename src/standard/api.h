@@ -7,8 +7,10 @@
 
 #include <cstdint>
 
-namespace IpcInterface {
-namespace Standard {
+namespace IpcInterface
+{
+namespace Standard
+{
 
 // 将一个u16按照小端模式转换为两个u8
 void Small_U16ToU8(uint16_t value, uint8_t* data);

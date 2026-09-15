@@ -19,12 +19,14 @@
 #include <map>
 #include <functional>
 
-
-namespace IpcInterface {
-namespace MulProcess {
+namespace IpcInterface
+{
+namespace MulProcess
+{
 
 // 共享内存名称与逻辑进程槽位映射；sender==INVALID_FD 表示多个发送者
-typedef struct {
+typedef struct
+{
     std::string m_shm_name;      // 共享内存名称
     uint8_t m_sender_logic;      // 发送者逻辑槽位，INVALID_FD 表示多个发送者
     uint8_t m_receiver_logic;    // 接收者逻辑槽位
@@ -33,14 +35,15 @@ typedef struct {
 using SyncFlagCallback = std::function<void(uint8_t logic_id, uint8_t flag)>;
 using StartProcessCallback = std::function<void(std::string shm_name, uint8_t logic_id)>;
 
-class ShmManager : public Model::MessageThread {
+class ShmManager : public Model::MessageThread
+{
 public:
     /**
      * @brief 构造函数
      * @param shm_name 共享内存名称，作为本进程的消息接口名称
      */
     ShmManager();
-    
+
     /**
      * @brief 析构函数，自动调用 close()
      */
@@ -92,7 +95,9 @@ public:
     /**
      * @brief 请求申请分配共享内存（可任意线程直调）
     */
-    bool RequestAllocateShm(const std::string& sender_shm_name, const std::string& receiver_shm_name, uint32_t slot_size, uint32_t slot_count, const std::string& new_shm_name);
+    bool RequestAllocateShm(const std::string& sender_shm_name,
+        const std::string& receiver_shm_name, uint32_t slot_size, uint32_t slot_count,
+        const std::string& new_shm_name);
 
     /**
      * @brief 请求释放共享内存（可任意线程直调）

@@ -11,66 +11,79 @@
 #include <pthread.h>
 #endif
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
-ThreadBase::ThreadBase(std::string name) : m_thread_name(std::move(name)) {}
+ThreadBase::ThreadBase(std::string name)
+    : m_thread_name(std::move(name))
+{
+}
 
-ThreadBase::~ThreadBase() {
+ThreadBase::~ThreadBase()
+{
     stop();
 }
 
-void ThreadBase::applyThreadName() {
-    if (m_thread_name.empty()) {
+void ThreadBase::applyThreadName()
+{
+    if (m_thread_name.empty())
         return;
-    }
 #if defined(__linux__)
     pthread_setname_np(pthread_self(), m_thread_name.substr(0, 15).c_str());
 #endif
 }
 
-void ThreadBase::start() {
+void ThreadBase::start()
+{
     // 双重检查，避免重复启动
-    if (!m_running.load(std::memory_order_acquire)) {
+    if (!m_running.load(std::memory_order_acquire))
+    {
         m_running.store(true, std::memory_order_release);
         m_thread = std::thread(&ThreadBase::threadFunc, this);
     }
 }
 
-void ThreadBase::stop() {
+void ThreadBase::stop()
+{
     // 设置停止标志，等待线程退出
-    if (m_running.load(std::memory_order_acquire)) {
+    if (m_running.load(std::memory_order_acquire))
+    {
         setRunning(false);
         wait();
     }
 }
 
-bool ThreadBase::isRunning() const {
+bool ThreadBase::isRunning() const
+{
     return m_running.load(std::memory_order_acquire);
 }
 
-void ThreadBase::setRunning(bool running) {
+void ThreadBase::setRunning(bool running)
+{
     m_running.store(running, std::memory_order_release);
 }
 
-void ThreadBase::wait() {
-    if (m_thread.joinable()) {
+void ThreadBase::wait()
+{
+    if (m_thread.joinable())
         m_thread.join();
-    }
 }
 
-bool ThreadBase::isInWorkerThread() const {
+bool ThreadBase::isInWorkerThread() const
+{
     return std::this_thread::get_id() == m_worker_thread_id;
 }
 
-void ThreadBase::threadFunc() {
+void ThreadBase::threadFunc()
+{
     m_worker_thread_id = std::this_thread::get_id();
     applyThreadName();
     OnThreadInit();
     // 循环执行 Run()，直到 m_running 被设置为 false
-    while (isRunning()) {
+    while (isRunning())
         Run();
-    }
     OnThreadExit();
 }
 

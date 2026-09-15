@@ -11,16 +11,19 @@
 #include <string>
 #include <thread>
 
-namespace IpcInterface {
-namespace Model {
-class ThreadBase {
+namespace IpcInterface
+{
+namespace Model
+{
+class ThreadBase
+{
 public:
     /**
      * @brief 构造函数
      * @param name 工作线程名，Linux 最多 15 字符；空串表示不设置
      */
     explicit ThreadBase(std::string name = {});
-    
+
     /**
      * @brief 析构函数，确保线程停止
      */
@@ -33,12 +36,12 @@ public:
      * @brief 启动线程
      */
     void start();
-    
+
     /**
      * @brief 停止线程（阻塞等待）
      */
     virtual void stop();
-    
+
     /**
      * @brief 查询线程运行状态
      * @return 运行中返回true，否则返回false
@@ -59,18 +62,22 @@ protected:
     /**
      * @brief 线程初始化钩子，在线程启动后、Run()执行前调用
      */
-    virtual void OnThreadInit() {}
+    virtual void OnThreadInit()
+    {
+    }
 
     /**
      * @brief 线程退出钩子，在线程退出前调用
      */
-    virtual void OnThreadExit() {}
-    
+    virtual void OnThreadExit()
+    {
+    }
+
     /**
      * @brief 线程主循环函数，派生类必须实现
      */
     virtual void Run() = 0;
-    
+
     /**
      * @brief 查询是否在工作线程中执行
      * @return 在工作线程中执行返回true，否则返回false

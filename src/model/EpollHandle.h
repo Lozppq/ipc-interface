@@ -10,10 +10,13 @@
 #include <sys/epoll.h>
 #endif
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
-class EpollHandle {
+class EpollHandle
+{
 public:
 #if defined(__linux__)
     static constexpr int kMaxEventsOnce = 64;

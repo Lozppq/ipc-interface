@@ -9,45 +9,47 @@
 #include <sys/epoll.h>
 #endif
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
 EpollControl::EpollControl(size_t queue_size)
-    : m_queue(queue_size) {
+    : m_queue(queue_size)
+{
 #if defined(__linux__)
-    if (m_event.isValid()) {
+    if (m_event.isValid())
         m_epoll.add(m_event.getFd(), EPOLLIN | EPOLLET);
-    }
 #endif
 }
 
-EpollControl::~EpollControl() {
-    while (!m_timers.empty()) {
+EpollControl::~EpollControl()
+{
+    while (!m_timers.empty())
         stopTimer(m_timers.begin()->first);
-    }
 }
 
-bool EpollControl::post(std::function<void()> callback) {
-    if (!callback) {
+bool EpollControl::post(std::function<void()> callback)
+{
+    if (!callback)
         return false;
-    }
-    if (m_queue.push(std::move(callback))) {
+    if (m_queue.push(std::move(callback)))
+    {
         m_event.wake();
         return true;
     }
     return false;
 }
 
-int EpollControl::startTimer(uint32_t interval_ms, bool periodic, TimerCallback callback) {
+int EpollControl::startTimer(uint32_t interval_ms, bool periodic, TimerCallback callback)
+{
     TimerItem item;
-    if (!item.m_timer.start(interval_ms, periodic)) {
+    if (!item.m_timer.start(interval_ms, periodic))
         return -1;
-    }
     int fd = item.m_timer.getFd();
 #if defined(__linux__)
-    if (!m_epoll.add(fd, EPOLLIN | EPOLLET)) {
+    if (!m_epoll.add(fd, EPOLLIN | EPOLLET))
         return -1;
-    }
 #else
     (void)fd;
     return -1;
@@ -57,54 +59,54 @@ int EpollControl::startTimer(uint32_t interval_ms, bool periodic, TimerCallback 
     return fd;
 }
 
-void EpollControl::stopTimer(int fd) {
+void EpollControl::stopTimer(int fd)
+{
     auto it = m_timers.find(fd);
-    if (it == m_timers.end()) {
+    if (it == m_timers.end())
         return;
-    }
     m_epoll.del(fd);
     it->second.m_timer.stop();
     m_timers.erase(it);
 }
 
-int EpollControl::wait(int timeout_ms) {
+int EpollControl::wait(int timeout_ms)
+{
     int n = m_epoll.wait(timeout_ms);
-    if (n <= 0) {
+    if (n <= 0)
         return n;
-    }
 #if defined(__linux__)
     const epoll_event* evs = m_epoll.events();
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < n; ++i)
+    {
         int fd = evs[i].data.fd;
-        if (fd == m_event.getFd()) {
+        if (fd == m_event.getFd())
+        {
             m_event.read();
             std::function<void()> task;
-            while (m_queue.pop(task)) {
-                if (task) {
+            while (m_queue.pop(task))
+            {
+                if (task)
                     task();
-                }
             }
             continue;
         }
         auto it = m_timers.find(fd);
-        if (it == m_timers.end()) {
+        if (it == m_timers.end())
             continue;
-        }
         it->second.m_timer.read();
         TimerCallback cb = it->second.m_callback;
         const bool periodic = it->second.m_timer.isPeriodic();
-        if (cb) {
+        if (cb)
             cb(fd);
-        }
-        if (!periodic) {
+        if (!periodic)
             stopTimer(fd);
-        }
     }
 #endif
     return n;
 }
 
-void EpollControl::wake() {
+void EpollControl::wake()
+{
     m_event.wake();
 }
 

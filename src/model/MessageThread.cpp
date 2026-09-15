@@ -8,44 +8,52 @@
 #include "../log/Log_Print.h"
 #include "SemaphoreHandle.h"
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
 MessageThread::MessageThread(size_t queue_size, std::string name)
-    : ThreadBase(std::move(name)), m_epoll(queue_size) {
+    : ThreadBase(std::move(name)), m_epoll(queue_size)
+{
 }
 
-MessageThread::~MessageThread() {
+MessageThread::~MessageThread()
+{
     stop();
 }
 
-void MessageThread::stop() {
+void MessageThread::stop()
+{
     setRunning(false);
     m_epoll.wake();
     wait();
 }
 
-bool MessageThread::post(std::function<void()> task) {
+bool MessageThread::post(std::function<void()> task)
+{
     return m_epoll.post(std::move(task));
 }
 
-void MessageThread::postTimer(uint32_t delay_ms, TimerCallback callback) {
+void MessageThread::postTimer(uint32_t delay_ms, TimerCallback callback)
+{
     startTimer(delay_ms, false, std::move(callback));
 }
 
-int MessageThread::startTimer(uint32_t interval_ms, bool periodic, TimerCallback callback) {
-    if (interval_ms == 0) {
+int MessageThread::startTimer(uint32_t interval_ms, bool periodic, TimerCallback callback)
+{
+    if (interval_ms == 0)
         return -1;
-    }
-    if (isInWorkerThread()) {
+    if (isInWorkerThread())
         return m_epoll.startTimer(interval_ms, periodic, std::move(callback));
-    }
     int fd = -1;
     SemaphoreHandle done(0, SemaphoreHandle::ShareThread);
-    if (!m_epoll.post([this, &done, &fd, interval_ms, periodic, cb = std::move(callback)]() mutable {
+    if (!m_epoll.post([this, &done, &fd, interval_ms, periodic, cb = std::move(callback)]() mutable
+    {
         fd = m_epoll.startTimer(interval_ms, periodic, std::move(cb));
         done.post();
-    })) {
+    }))
+    {
         LOG_ERROR("MessageThread::startTimer queue full, drop timer");
         return -1;
     }
@@ -53,23 +61,26 @@ int MessageThread::startTimer(uint32_t interval_ms, bool periodic, TimerCallback
     return fd;
 }
 
-void MessageThread::stopTimer(int timer_fd) {
-    if (timer_fd < 0) {
+void MessageThread::stopTimer(int timer_fd)
+{
+    if (timer_fd < 0)
         return;
-    }
-    if (isInWorkerThread()) {
+    if (isInWorkerThread())
+    {
         m_epoll.stopTimer(timer_fd);
         return;
     }
-    if (!m_epoll.post([this, timer_fd]() { m_epoll.stopTimer(timer_fd); })) {
+    if (!m_epoll.post([this, timer_fd]()
+    {
+        m_epoll.stopTimer(timer_fd);
+    }))
         LOG_ERROR("MessageThread::stopTimer queue full, drop stop fd=%d", timer_fd);
-    }
 }
 
-void MessageThread::Run() {
-    while (isRunning()) {
+void MessageThread::Run()
+{
+    while (isRunning())
         m_epoll.wait(-1);
-    }
 }
 
 } // namespace Model

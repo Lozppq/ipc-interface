@@ -7,17 +7,21 @@
 #include <functional>
 #include <vector>
 #include <memory>
-namespace IpcInterface {
-namespace MulProcess {
+namespace IpcInterface
+{
+namespace MulProcess
+{
 
 // 进程信息
-typedef struct {
+typedef struct
+{
     std::string m_shm_name;  // 共享内存名称
     std::string m_process_executable_name;  // 进程可执行文件名称
     uint32_t m_pid;  // 进程id
 } ProcessInfo;
 
-class ProcessManager : public Model::MessageThread {
+class ProcessManager : public Model::MessageThread
+{
 public:
     ProcessManager();
     ~ProcessManager();
@@ -92,7 +96,7 @@ protected:
      * @param process_executable_name 进程可执行文件名称
      */
     void createProcess(std::string shm_name, std::string process_executable_name);
-    
+
     /**
      * @brief 初始化进程同步信息共享内存
     */
@@ -107,7 +111,6 @@ private:
     // 进程同步信息共享内存
     std::shared_ptr<Model::ShmCreator<Define::ProcessSyncInfo>> m_process_sync_shm_creator;
 };
-
 
 } // namespace MulProcess
 } // namespace IpcInterface

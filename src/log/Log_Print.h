@@ -2,11 +2,14 @@
 
 #include <cstdint>
 
-namespace IpcInterface {
-namespace Log {
+namespace IpcInterface
+{
+namespace Log
+{
 
 // 打印日志级别
-enum{
+enum
+{
     Level_Error = 0x01,
     Level_Warning = 0x02,
     Level_Info = 0x04,
@@ -23,7 +26,8 @@ void setLogLevel(uint32_t level);
  */
 void setLogPrefix(const char* prefix);
 
-class LogPrint {
+class LogPrint
+{
 public:
     LogPrint();
     ~LogPrint();
@@ -45,11 +49,18 @@ public:
 };
 
 // 日志打印宏
-#define LOG_INFO(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Info, __func__, __LINE__, fmt, ##__VA_ARGS__)
-#define LOG_WARN(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Warning, __func__, __LINE__, fmt, ##__VA_ARGS__)
-#define LOG_ERROR(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Error, __func__, __LINE__, fmt, ##__VA_ARGS__)
-#define LOG_DEBUG(fmt, ...) ::IpcInterface::Log::LogPrint::getInstance()->printLog(::IpcInterface::Log::Level_Debug, __func__, __LINE__, fmt, ##__VA_ARGS__)
-
+#define LOG_INFO(fmt, ...) \
+    ::IpcInterface::Log::LogPrint::getInstance()->printLog( \
+        ::IpcInterface::Log::Level_Info, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define LOG_WARN(fmt, ...) \
+    ::IpcInterface::Log::LogPrint::getInstance()->printLog( \
+        ::IpcInterface::Log::Level_Warning, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(fmt, ...) \
+    ::IpcInterface::Log::LogPrint::getInstance()->printLog( \
+        ::IpcInterface::Log::Level_Error, __func__, __LINE__, fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(fmt, ...) \
+    ::IpcInterface::Log::LogPrint::getInstance()->printLog( \
+        ::IpcInterface::Log::Level_Debug, __func__, __LINE__, fmt, ##__VA_ARGS__)
 
 } // namespace Log
 } // namespace IpcInterface

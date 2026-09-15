@@ -12,24 +12,29 @@
 #include <cstring>
 #endif
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
-TimerHandle::TimerHandle() {
+TimerHandle::TimerHandle()
+{
     Open();
 }
 
-TimerHandle::~TimerHandle() {
+TimerHandle::~TimerHandle()
+{
     Close();
 }
 
-bool TimerHandle::Open() {
+bool TimerHandle::Open()
+{
 #if defined(__linux__)
-    if (m_fd >= 0) {
+    if (m_fd >= 0)
         return true;
-    }
     int new_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-    if (new_fd < 0) {
+    if (new_fd < 0)
+    {
         LOG_ERROR("TimerHandle::Open timerfd_create failed: %s", std::strerror(errno));
         return false;
     }
@@ -40,9 +45,11 @@ bool TimerHandle::Open() {
 #endif
 }
 
-void TimerHandle::Close() {
+void TimerHandle::Close()
+{
 #if defined(__linux__)
-    if (m_fd >= 0) {
+    if (m_fd >= 0)
+    {
         ::close(m_fd);
         m_fd = -1;
     }
@@ -50,18 +57,18 @@ void TimerHandle::Close() {
     m_periodic = false;
 }
 
-bool TimerHandle::start(uint32_t interval_ms, bool periodic) {
+bool TimerHandle::start(uint32_t interval_ms, bool periodic)
+{
 #if defined(__linux__)
-    if (m_fd < 0 || interval_ms == 0) {
+    if (m_fd < 0 || interval_ms == 0)
         return false;
-    }
     itimerspec its{};
     its.it_value.tv_sec = interval_ms / 1000;
     its.it_value.tv_nsec = static_cast<long>((interval_ms % 1000) * 1000000L);
-    if (periodic) {
+    if (periodic)
         its.it_interval = its.it_value;
-    }
-    if (timerfd_settime(m_fd, 0, &its, nullptr) != 0) {
+    if (timerfd_settime(m_fd, 0, &its, nullptr) != 0)
+    {
         LOG_ERROR("TimerHandle::start timerfd_settime failed: %s", std::strerror(errno));
         return false;
     }
@@ -74,13 +81,14 @@ bool TimerHandle::start(uint32_t interval_ms, bool periodic) {
 #endif
 }
 
-bool TimerHandle::stop() {
+bool TimerHandle::stop()
+{
 #if defined(__linux__)
-    if (m_fd < 0) {
+    if (m_fd < 0)
         return true;
-    }
     itimerspec its{};
-    if (timerfd_settime(m_fd, 0, &its, nullptr) != 0) {
+    if (timerfd_settime(m_fd, 0, &its, nullptr) != 0)
+    {
         LOG_ERROR("TimerHandle::stop timerfd_settime failed: %s", std::strerror(errno));
         return false;
     }
@@ -91,17 +99,17 @@ bool TimerHandle::stop() {
 #endif
 }
 
-uint64_t TimerHandle::read() {
+uint64_t TimerHandle::read()
+{
 #if defined(__linux__)
-    if (m_fd < 0) {
+    if (m_fd < 0)
         return 0;
-    }
     uint64_t cnt = 0;
     ssize_t n = ::read(m_fd, &cnt, sizeof(cnt));
-    if (n < 0) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+    if (n < 0)
+    {
+        if (errno != EAGAIN && errno != EWOULDBLOCK)
             LOG_ERROR("TimerHandle::read failed: %s", std::strerror(errno));
-        }
         return 0;
     }
     return cnt;
@@ -110,33 +118,39 @@ uint64_t TimerHandle::read() {
 #endif
 }
 
-int TimerHandle::getFd() const {
+int TimerHandle::getFd() const
+{
     return m_fd;
 }
 
-bool TimerHandle::isValid() const {
+bool TimerHandle::isValid() const
+{
     return m_fd >= 0;
 }
 
-bool TimerHandle::isPeriodic() const {
+bool TimerHandle::isPeriodic() const
+{
     return m_periodic;
 }
 
 TimerHandle::TimerHandle(TimerHandle&& other) noexcept
-    : m_fd(other.m_fd), m_periodic(other.m_periodic) {
+    : m_fd(other.m_fd), m_periodic(other.m_periodic)
+    {
     other.m_fd = -1;
     other.m_periodic = false;
 }
 
-TimerHandle& TimerHandle::operator=(TimerHandle&& other) noexcept {
-    if (this != &other) {
+TimerHandle& TimerHandle::operator=(TimerHandle&& other) noexcept
+{
+    if (this != &other)
+    {
         Close();
         m_fd = other.m_fd;
         m_periodic = other.m_periodic;
         other.m_fd = -1;
         other.m_periodic = false;
     }
-    return *this;
+    return* this;
 }
 
 } // namespace Model

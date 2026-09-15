@@ -13,11 +13,13 @@
 #include <memory>
 #include <vector>
 
-namespace IpcInterface {
-namespace MulProcess {
+namespace IpcInterface
+{
+namespace MulProcess
+{
 
-
-class SendWork : public Model::MessageThread {
+class SendWork : public Model::MessageThread
+{
 public:
     explicit SendWork(std::shared_ptr<StreamShmCreator> shm = nullptr, std::string name = {});
     ~SendWork();

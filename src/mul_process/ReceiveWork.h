@@ -14,10 +14,13 @@
 #include <memory>
 #include <string>
 
-namespace IpcInterface {
-namespace MulProcess {
+namespace IpcInterface
+{
+namespace MulProcess
+{
 
-class ReceiveWork : public Model::MessageThread {
+class ReceiveWork : public Model::MessageThread
+{
 public:
     ReceiveWork(std::shared_ptr<StreamShmCreator> shm, ReceiveHandler handler, std::string name = {});
     ~ReceiveWork();

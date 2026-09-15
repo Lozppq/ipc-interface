@@ -7,10 +7,13 @@
 
 #include <cstdint>
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
-class EventHandle {
+class EventHandle
+{
 public:
     EventHandle();
     ~EventHandle();

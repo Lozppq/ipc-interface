@@ -9,12 +9,16 @@
 #include <semaphore.h>
 #endif
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
-class SemaphoreHandle {
+class SemaphoreHandle
+{
 public:
-    enum ShareMode {
+    enum ShareMode
+    {
         ShareThread = 0,
         ShareProcess = 1
     };

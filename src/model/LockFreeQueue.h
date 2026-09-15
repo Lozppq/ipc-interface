@@ -10,17 +10,20 @@
 #include <cstdint>
 #include <utility>
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 template<typename T>
-class LockFreeQueue {
+class LockFreeQueue
+{
 public:
     /**
      * @brief 构造函数
      * @param capacity 队列容量，内部会向上取整为2的幂次
      */
     explicit LockFreeQueue(size_t capacity);
-    
+
     /**
      * @brief 析构函数，释放缓冲区内存
      */
@@ -35,33 +38,33 @@ public:
      * @return 成功返回true，队列满返回false
      */
     bool push(const T& item);
-    
+
     /**
      * @brief 入队（移动语义）
      * @param item 待入队的元素右值引用
      * @return 成功返回true，队列满返回false
      */
     bool push(T&& item);
-    
+
     /**
      * @brief 出队
      * @param item 输出参数，存储出队元素
      * @return 成功返回true，队列空返回false
      */
     bool pop(T& item);
-    
+
     /**
      * @brief 判断队列是否已满
      * @return 满返回true，否则返回false
      */
     bool isFull() const;
-    
+
     /**
      * @brief 判断队列是否为空
      * @return 空返回true，否则返回false
      */
     bool isEmpty() const;
-    
+
     /**
      * @brief 获取队列当前元素数量
      * @return 当前元素个数
@@ -77,7 +80,8 @@ private:
     /**
      * @brief 节点结构，包含数据和提交标志位
      */
-    struct Node {
+    struct Node
+    {
         T m_data;
         std::atomic<bool> m_committed{false}; // 标记数据是否已写入完成
     };

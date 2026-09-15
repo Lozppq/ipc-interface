@@ -7,11 +7,11 @@
  */
 
 template<typename T>
-size_t LockFreeQueue<T>::roundUpToPowerOf2(size_t n) {
+size_t LockFreeQueue<T>::roundUpToPowerOf2(size_t n)
+{
     size_t res = 1;
-    while (res < n) {
+    while (res < n)
         res <<= 1;
-    }
     return res;
 }
 
@@ -22,42 +22,42 @@ void LockFreeQueue<T>::waitSlotWritable(size_t idx)
     // WHY: pop 先 CAS 推进 head，随后才 move/清 committed；满队列环绕时
     // 生产者已可复用同槽，必须等消费者读完再写，避免并发 move 同一 T
     while (slotBusy)
-    {
         slotBusy = m_buffer[idx].m_committed.load(std::memory_order_acquire);
-    }
 }
 
 template<typename T>
 LockFreeQueue<T>::LockFreeQueue(size_t capacity)
     : m_buffer(new Node[roundUpToPowerOf2(capacity)]),
       m_capacity(roundUpToPowerOf2(capacity)),
-      m_mask(roundUpToPowerOf2(capacity) - 1) {
+      m_mask(roundUpToPowerOf2(capacity) - 1)
+{
 }
 
 template<typename T>
-LockFreeQueue<T>::~LockFreeQueue() {
+LockFreeQueue<T>::~LockFreeQueue()
+{
     delete[] m_buffer;
 }
 
 template<typename T>
-bool LockFreeQueue<T>::push(const T& item) {
+bool LockFreeQueue<T>::push(const T& item)
+{
     size_t tail = m_tail.load(std::memory_order_acquire);
     size_t head;
-    
-    while (true) {
+
+    while (1)
+    {
         head = m_head.load(std::memory_order_acquire);
         // 通过减法判断是否满：tail - head >= m_capacity 时满
-        if (((tail - head) & ~m_mask) != 0) {
+        if (((tail - head) & ~m_mask) != 0)
             return false;
-        }
-        
+
         // CAS抢占队尾位置，成功则跳出循环
         if (m_tail.compare_exchange_weak(tail, tail + 1,
-                std::memory_order_acq_rel, std::memory_order_release)) {
+                std::memory_order_acq_rel, std::memory_order_release))
             break;
-        }
     }
-    
+
     // 计算环形索引，写入数据后标记已提交
     size_t idx = tail & m_mask;
     waitSlotWritable(idx);
@@ -67,22 +67,22 @@ bool LockFreeQueue<T>::push(const T& item) {
 }
 
 template<typename T>
-bool LockFreeQueue<T>::push(T&& item) {
+bool LockFreeQueue<T>::push(T&& item)
+{
     size_t tail = m_tail.load(std::memory_order_acquire);
     size_t head;
-    
-    while (true) {
+
+    while (1)
+    {
         head = m_head.load(std::memory_order_acquire);
-        if (((tail - head) & ~m_mask) != 0) {
+        if (((tail - head) & ~m_mask) != 0)
             return false;
-        }
-        
+
         if (m_tail.compare_exchange_weak(tail, tail + 1,
-                std::memory_order_acq_rel, std::memory_order_acquire)) {
+                std::memory_order_acq_rel, std::memory_order_acquire))
             break;
-        }
     }
-    
+
     size_t idx = tail & m_mask;
     waitSlotWritable(idx);
     m_buffer[idx].m_data = std::move(item);
@@ -91,26 +91,25 @@ bool LockFreeQueue<T>::push(T&& item) {
 }
 
 template<typename T>
-bool LockFreeQueue<T>::pop(T& item) {
+bool LockFreeQueue<T>::pop(T& item)
+{
     size_t head = m_head.load(std::memory_order_acquire);
     size_t tail, idx;
-    
-    while (true) {
+
+    while (1)
+    {
         tail = m_tail.load(std::memory_order_acquire);
         // 队列为空
-        if (head == tail) {
+        if (head == tail)
             return false;
-        }
-        
+
         // 检查数据是否已提交，未提交则自旋等待
         idx = head & m_mask;
-        if (!m_buffer[idx].m_committed.load(std::memory_order_acquire)) {
+        if (!m_buffer[idx].m_committed.load(std::memory_order_acquire))
             continue;
-        }
         if (m_head.compare_exchange_weak(head, head + 1,
-            std::memory_order_acq_rel, std::memory_order_acquire)) {
+            std::memory_order_acq_rel, std::memory_order_acquire))
             break;
-        }
     }
     item = std::move(m_buffer[idx].m_data);
     m_buffer[idx].m_committed.store(false, std::memory_order_release);
@@ -118,31 +117,34 @@ bool LockFreeQueue<T>::pop(T& item) {
 }
 
 template<typename T>
-bool LockFreeQueue<T>::isFull() const {
+bool LockFreeQueue<T>::isFull() const
+{
     size_t head = m_head.load(std::memory_order_acquire);
     size_t tail = m_tail.load(std::memory_order_acquire);
     return ((tail - head) & ~m_mask) != 0;
 }
 
 template<typename T>
-bool LockFreeQueue<T>::isEmpty() const {
+bool LockFreeQueue<T>::isEmpty() const
+{
     size_t head = m_head.load(std::memory_order_acquire);
     size_t tail = m_tail.load(std::memory_order_acquire);
     return head == tail;
 }
 
 template<typename T>
-size_t LockFreeQueue<T>::size() const {
+size_t LockFreeQueue<T>::size() const
+{
     size_t head = m_head.load(std::memory_order_acquire);
     size_t tail = m_tail.load(std::memory_order_acquire);
     return (tail - head) & m_mask;
 }
 
 template<typename T>
-void LockFreeQueue<T>::clear() {
+void LockFreeQueue<T>::clear()
+{
     m_head.store(0, std::memory_order_release);
     m_tail.store(0, std::memory_order_release);
-    for (size_t i = 0; i < m_capacity; ++i) {
+    for (size_t i = 0; i < m_capacity; ++i)
         m_buffer[i].m_committed.store(false, std::memory_order_release);
-    }
 }

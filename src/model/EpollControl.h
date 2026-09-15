@@ -13,12 +13,15 @@
 #include <functional>
 #include <map>
 
-namespace IpcInterface {
-namespace Model {
+namespace IpcInterface
+{
+namespace Model
+{
 
 using TimerCallback = std::function<void(int fd)>;
 
-class EpollControl {
+class EpollControl
+{
 public:
     explicit EpollControl(size_t queue_size = 1024);
     ~EpollControl();
@@ -33,7 +36,8 @@ public:
     void wake();
 
 private:
-    struct TimerItem {
+    struct TimerItem
+    {
         TimerHandle m_timer;
         TimerCallback m_callback;
     };
