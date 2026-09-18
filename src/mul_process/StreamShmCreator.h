@@ -388,6 +388,8 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
         {
             // 启发式探索：这里需要计算，如果等待当前槽位到固定tail超时，则直接将当前槽位数据丢弃再break
             uint32_t tail = hdr->m_tail.load(std::memory_order_acquire);
+            if (tail == head)
+                break;
             uint32_t not_commit_head = head, not_commit_tail;
             if ((tail - head + m_slot_count) % m_slot_count > MAX_SLICE_COUNT)
                 not_commit_tail = (head + MAX_SLICE_COUNT) % m_slot_count;
