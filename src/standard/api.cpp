@@ -4,6 +4,7 @@
  */
 
 #include "api.h"
+#include <chrono>
 
 namespace IpcInterface
 {
@@ -112,6 +113,13 @@ uint64_t Big_U8ToU64(const uint8_t* data)
         | (static_cast<uint64_t>(data[5]) << 16)
         | (static_cast<uint64_t>(data[6]) << 8)
         | static_cast<uint64_t>(data[7]);
+}
+
+uint64_t GetTimestamp()
+{
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
 } // namespace Standard

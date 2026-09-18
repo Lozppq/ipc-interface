@@ -7,8 +7,9 @@
 | 角色 | 槽位枚举 | 共享内存名 | 可执行文件 | 说明 |
 |------|----------|------------|------------|------|
 | Daemon | `Daemon_Fd` | `/ipc_daemon` | `daemon` | 创建各进程消息队列 shm，拉起子进程，`waitpid` 监控崩溃 |
-| Process1 | `Process1_Fd` | `/ipc_process_1` | `process_1` | demo：周期性向 Process2 发消息 |
-| Process2 | `Process2_Fd` | `/ipc_process_2` | `process_2` | demo：周期性向 Process1 发消息 |
+| Process1 | `Process1_Fd` | `/ipc_process_1` | `process_1` | demo：周期性向 Process2 / Process3 发消息 |
+| Process2 | `Process2_Fd` | `/ipc_process_2` | `process_2` | demo：周期性向 Process1 / Process3 发消息 |
+| Process3 | `Process3_Fd` | `/ipc_process_3` | `process_3` | demo：周期性向 Process1 / Process2 发消息 |
 
 名称与可执行文件定义在 `src/define/Common.h`：`kShmNames[]`、`kProcessExecutableNames[]`，下标与 `Daemon_Fd` / `ProcessN_Fd` 对齐。
 
@@ -16,9 +17,10 @@
 
 主要模块：
 
-- `ShmManager`：本进程消息收发、打开/创建 `StreamShmCreator` 队列
+- `ShmManager`：本进程消息收发、打开/创建 `StreamShmCreator` 队列；发送在调用线程直写目标环
 - `ProcessManager`：fork/exec 子进程、崩溃后重新拉起
 - `StreamShmCreator` / `ShmCreator`：POSIX shm 环形队列与通用映射模板
+- `ReceiveWork`：独立线程轮询本进程（或动态通道）接收环并回调
 - `MessageThread`：无锁任务队列 + 定时器工作线程
 - `Log_Print`：`LOG_INFO` / `LOG_ERROR` 等
 
@@ -49,7 +51,7 @@ build/lib/libipc-interface.so
 build/bin/daemon
 build/bin/process_1
 build/bin/process_2
-build/bin/process_3   # 随 demo/*.cpp 自动生成
+build/bin/process_3      # 随 demo/*.cpp 自动生成
 build/bin/udp_process    # 本机 UDP 对照，make / make tests 生成
 ```
 
@@ -112,16 +114,22 @@ cd /path/to/ipc-interface/build/bin
 
 int main() {
     auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
-    mgr->initParams(IpcInterface::Define::Process1);  // 或 Process2 / Daemon
-    mgr->start();
+    mgr->initParams(IpcInterface::Define::Process1);  // 或 Process2 / Process3 / Daemon
+
     mgr->setReceiveHandler([](std::shared_ptr<IpcInterface::MulProcess::TagReceiveMessage> tag) {
         if (!tag) return;
-        // 处理 MESSAGE_ID_PROCESS 业务消息
+        // 处理本进程固定 inbox 上的 MESSAGE_ID_PROCESS
     });
+    mgr->start();
 
-    std::vector<uint8_t> msg = {/* ... */};
-    mgr->send(std::move(msg), IpcInterface::Define::MESSAGE_ID_PROCESS,
-              IpcInterface::Define::Process2);  // 移交所有权后异步发送
+    auto tag = std::make_shared<IpcInterface::MulProcess::TagSendMessage>();
+    tag->m_data = {/* ... */};
+    tag->m_message_id = IpcInterface::Define::MESSAGE_ID_PROCESS;
+    mgr->send(tag, IpcInterface::Define::Process2);  // 调用线程直写对端接收环
+
+    // 等价写法：
+    // auto tag = mgr->makeSendMessage(std::move(msg), MESSAGE_ID_PROCESS);
+    // mgr->send(tag, Define::Process2);
 
     mgr->wait();  // 或自行保活
     return 0;
@@ -129,8 +137,9 @@ int main() {
 ```
 
 - `initParams(本进程队列名)`：非 daemon 会登记所有 `kShmNames`，便于打开发送目标队列
-- `send(msg, message_id, 目标 shm 名)`：写入对端的接收环；业务互通用 `MESSAGE_ID_PROCESS`
-- `setReceiveHandler`：注册**本进程固定 inbox**上 `MESSAGE_ID_PROCESS` 的回调；daemon 协议走内部 `onReceiveMessage`
+- `setReceiveHandler`：须在 `start()` **之前**注册；回调只覆盖本进程**固定 inbox**上的 `MESSAGE_ID_PROCESS`
+- `send(tag, 目标 shm 名)`：在**调用线程**写入对端接收环；失败时最多重试 `kSendMaxRetry`（5）次并 `sched_yield`。业务互通用 `MESSAGE_ID_PROCESS`
+- daemon 协议（ALLOCATE / RELEASE / SET_SYNC_FLAG）走内部 `onReceiveMessage`，不进 `setReceiveHandler`
 
 ### 动态申请 / 释放共享内存
 
@@ -140,18 +149,18 @@ int main() {
 
 ```text
 业务进程                         Daemon
-   |  postRequestAllocateShm(...)    |
+   |  RequestAllocateShm(...)        |
    |------ MESSAGE_ID_DAEMON ------->|
    |  (ALLOCATE 子消息)               | 创建 POSIX shm，登记 PidNameInfo
    |<----- 同一 ALLOCATE 回包 --------|  回给 sender / receiver 双方
    |  自动 open(false) 挂接           |
-   |  接收端再 postCreateReceiveWork  |
-   |  之后 send(..., new_shm_name)    |
+   |  接收端再 createReceiveWork      |
+   |  之后 send(tag, new_shm_name)    |
 ```
 
-`postRequestAllocateShm` / `RequestAllocateShm` 返回 `true` 只表示**请求已投递到 daemon**，不表示环已建好。挂接在收到 daemon 回包后由内部 `handleProcessMessage` 完成。
+`RequestAllocateShm` / `RequestReleaseShm` / `setSyncFlag` 可任意线程直调。返回 `true` 只表示**请求已发到 daemon 的 inbox**，不表示环已建好。挂接在收到 daemon 回包后由内部 `handleProcessMessage` 完成。
 
-#### 申请（推荐跨线程用 post 接口）
+#### 申请
 
 ```cpp
 #include "mul_process/ShmManager.h"
@@ -161,78 +170,79 @@ int main() {
 auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
 
 // 参数含义：
-//   sender_shm_name   — 发送侧进程的固定 inbox 名（如 Define::Process1）
-//   receiver_shm_name — 接收侧进程的固定 inbox 名（如 Define::Process2）
-//   slot_size         — 单槽字节数，必须是 SIZE_64B / SIZE_1KB / SIZE_256KB 之一
-//   slot_count        — 槽个数（如 1024）
-//   new_shm_name      — 新通道名，必须以 '/' 开头，且不在 kShmNames 固定表中
-//                       （如 "/ipc_dyn_p1_to_p2"）
-mgr->postRequestAllocateShm(
-    IpcInterface::Define::Process1,
-    IpcInterface::Define::Process2,
+//   sender_logic    — 发送侧逻辑槽位（如 Process1_Fd）；多发送者传 INVALID_FD
+//   receiver_logic  — 接收侧逻辑槽位（如 Process2_Fd）
+//   slot_size       — 单槽字节数，必须是 SIZE_64B / SIZE_1KB / SIZE_256KB 之一
+//   slot_count      — 槽个数（如 1024）
+//   new_shm_name    — 新通道名，必须以 '/' 开头，且不在 kShmNames 固定表中
+//                     （如 "/ipc_dyn_p1_to_p2"）
+mgr->RequestAllocateShm(
+    IpcInterface::Define::Process1_Fd,
+    IpcInterface::Define::Process2_Fd,
     IpcInterface::MulProcess::SIZE_64B,
     1024,
     "/ipc_dyn_p1_to_p2");
+// 接收者申请多发送者通道：
+// mgr->RequestAllocateShm(INVALID_FD, Process2_Fd, SIZE_64B, 1024, "/ipc_dyn_to_p2");
 ```
-
-若已在 `ShmManager` 工作线程内，也可直接调私有路径对应的投递；对外请用 **`postRequestAllocateShm`**（任意线程安全投递）。
 
 注意：
 
 - `new_shm_name` 长度需能放进协议里的 `u8` 长度字段（建议短名）。
-- 同名已存在时，本进程 `RequestAllocateShm` 会失败返回；daemon 侧对重复申请会**幂等回包**，不重复创建。
-- 发送方逻辑 id / 接收方逻辑 id 由 `sender_shm_name`、`receiver_shm_name` 在本地表里解析，须是已 `initParams` 登记过的固定进程名。
+- 本进程侧同名已存在时 `RequestAllocateShm` 返回 `false`；daemon 侧对重复申请会**幂等回包**，不重复创建。
+- 发送方 / 接收方直接传逻辑槽位；`sender_logic == INVALID_FD` 表示多发送者，daemon 只把 ALLOCATE 回包发给接收者。其他要发的进程自己再 `RequestAllocateShm` 挂接。
 
 #### 挂接成功后：收发
 
-双方在收到 ALLOCATE 回包后会 `open(false)` 并把通道放进 `shmInfosMap_`。
+双方在收到 ALLOCATE 回包后会 `open(false)` 并把通道放进 `shmInfos` 快照。
 
 **发送**（通道名用动态名，不是固定 Process2 inbox）：
 
 ```cpp
-std::vector<uint8_t> msg = {/* ... */};
-mgr->send(std::move(msg),
-          IpcInterface::Define::MESSAGE_ID_PROCESS,
-          "/ipc_dyn_p1_to_p2");
+auto tag = std::make_shared<IpcInterface::MulProcess::TagSendMessage>();
+tag->m_data = {/* ... */};
+tag->m_message_id = IpcInterface::Define::MESSAGE_ID_PROCESS;
+mgr->send(tag, "/ipc_dyn_p1_to_p2");
 ```
 
-默认 `SendWork` 即可发送；若要为该通道单独发送线程：
+发送不再经过独立 `SendWork` 线程。
+
+**接收**（动态通道**不会**走 `setReceiveHandler` 那个固定 inbox；接收端必须另建 `ReceiveWork`）：
 
 ```cpp
-mgr->postCreateSendWork("/ipc_dyn_p1_to_p2");
-```
-
-**接收**（动态通道**不会**走 `setReceiveHandler` 那个固定 inbox；接收端必须另建 ReceiveWork）：
-
-```cpp
-mgr->postCreateReceiveWork(
+auto work = mgr->createReceiveWork(
     "/ipc_dyn_p1_to_p2",
     [](std::shared_ptr<IpcInterface::MulProcess::TagReceiveMessage> tag) {
         if (!tag) return;
         // 处理该动态通道上的业务消息
     });
+if (!work) {
+    // shm 尚未 open 成功；通道就绪后再调一次
+}
 ```
 
-一般由**接收侧进程**在认为通道将就绪后调用；若 open 尚未成功，内部会定时重试创建 ReceiveWork。
+- 一般由**接收侧进程**在 ALLOCATE 挂接成功后调用
+- shm 未就绪返回 `nullptr`，**不会**内部定时重试（固定 inbox 的 `initReceiveWork` 才每 1000ms 重试）
+- 同名已存在则返回已有实例（不替换 handler）
 
 #### 释放
 
 ```cpp
-mgr->postRequestReleaseShm("/ipc_dyn_p1_to_p2");
+mgr->RequestReleaseShm("/ipc_dyn_p1_to_p2");
 ```
 
-流程：向 daemon 发 RELEASE → daemon `unlink` 并通知相关进程 → 各进程停该通道的 Send/ReceiveWork 并 `close`。  
-崩溃时：固定通道只清 flag、保留环数据；**动态通道**会走 RELEASE/`unlink`，进程起来后需业务再次 `postRequestAllocateShm`。
+流程：向 daemon 发 RELEASE → daemon `unlink` 并通知相关进程 → 各进程停该通道的 `ReceiveWork` 并 `close`。  
+崩溃时：固定通道只清 flag、保留环数据；**动态通道**会走 RELEASE/`unlink`，进程起来后需业务再次 `RequestAllocateShm`。
 
 #### 与固定通道对比
 
 | | 固定通道 | 动态通道 |
 |--|----------|----------|
-| 创建 | daemon 启动创建 | 业务 `postRequestAllocateShm` |
+| 创建 | daemon 启动创建 | 业务 `RequestAllocateShm` |
 | 名称 | `kShmNames[]` | 自定义 `/...`，勿与固定名冲突 |
-| 收消息 | `setReceiveHandler` | `postCreateReceiveWork` |
-| 发消息 | `send(..., ProcessN)` | `send(..., new_shm_name)` |
-| 释放 | 一般不释放 | `postRequestReleaseShm` |
+| 收消息 | `setReceiveHandler` | `createReceiveWork` |
+| 发消息 | `send(tag, ProcessN)` | `send(tag, new_shm_name)` |
+| 释放 | 一般不释放 | `RequestReleaseShm` |
 
 ### 增加新业务进程
 
@@ -256,7 +266,7 @@ mgr->postRequestReleaseShm("/ipc_dyn_p1_to_p2");
 - `kProcessSyncFlagInitValues[]`：daemon 创建同步 shm 时的初值，下标必须与 `kShmNameCount` 一致
 - `ProcessSyncShmName`：`/ipc_process_sync`
 
-`ProcessManager` 只在 `flags[槽位] == DONE` 时 `fork/exec`；为 `NONE` 时每 100ms 重试，直到被置为 `DONE`。崩溃后重新拉起也走同一检查。
+`ProcessManager` 只在 `flags[槽位] == DONE` 时 `fork/exec`；为 `NONE` 或拉起失败时每 **1000ms** 重试，直到被置为 `DONE`。崩溃后重新拉起也走同一检查。
 
 **延迟拉起某个进程**：把该槽初值改成 `NONE`，依赖方就绪后再置 `DONE`。例如希望 `process_3` 等 `process_1` 初始化完再启动：
 
@@ -270,7 +280,7 @@ constexpr uint8_t kProcessSyncFlagInitValues[] = {
 };
 ```
 
-`process_1` 初始化完成后通知 daemon（任意线程用 `postSetSyncFlag`）：
+`process_1` 初始化完成后通知 daemon（任意线程直调 `setSyncFlag`）：
 
 ```cpp
 #include "mul_process/ShmManager.h"
@@ -278,8 +288,8 @@ constexpr uint8_t kProcessSyncFlagInitValues[] = {
 
 auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
 // 允许拉起 / 重新拉起 process_3
-mgr->postSetSyncFlag(IpcInterface::Define::Process3,
-                     IpcInterface::Define::PROCESS_SYNC_FLAG_DONE);
+mgr->setSyncFlag(IpcInterface::Define::Process3,
+                 IpcInterface::Define::PROCESS_SYNC_FLAG_DONE);
 ```
 
 消息经 `MESSAGE_ID_DAEMON` / `MESSAGE_SUB_ID_SET_SYNC_FLAG` 到 daemon，再 `ProcessManager::setProcessSyncFlag`。也可把已在跑的槽改回 `NONE`，之后崩溃将不会被自动拉起，直到再次 `DONE`。
@@ -294,12 +304,13 @@ src/
   define/          # Common.h（名称、槽位、同步结构）、MessageId.h
   log/             # 日志
   model/           # ThreadBase / MessageThread / LockFreeQueue / ShmCreator
-  mul_process/     # ShmManager / ProcessManager / StreamShmCreator / Send&ReceiveWork
+  mul_process/     # ShmManager / ProcessManager / StreamShmCreator / ReceiveWork / TagMessage
 demo/
   process_1.cpp
   process_2.cpp
+  process_3.cpp
 test/
-  udp_process.cpp   # 本机 UDP 吞吐对照
+  udp_process.cpp  # 本机 UDP 吞吐对照
 Makefile
 ```
 

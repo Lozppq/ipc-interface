@@ -32,6 +32,12 @@ typedef struct
     uint8_t m_receiver_logic;    // 接收者逻辑槽位
 } PidNameInfo;
 
+enum : uint8_t
+{
+    RELEASE_SHM_NORMAL = 0,
+    RELEASE_SHM_FORCE = 1,
+};
+
 using SyncFlagCallback = std::function<void(uint8_t logic_id, uint8_t flag)>;
 using StartProcessCallback = std::function<void(std::string shm_name, uint8_t logic_id)>;
 
@@ -82,11 +88,6 @@ public:
     void addPidNameInfo(PidNameInfo info);
 
     /**
-     * @brief 外部线程投递一次创建一个pidinfor相对应的共享内存
-    */
-    void postCreatePidNameInfo(PidNameInfo info);
-
-    /**
      * @brief 处理进程崩溃共享内存的重置
      * @param logic_id 逻辑进程槽位
     */
@@ -94,15 +95,17 @@ public:
 
     /**
      * @brief 请求申请分配共享内存（可任意线程直调）
+     * @param sender_logic 发送者逻辑槽位，INVALID_FD 表示多发送者
+     * @param receiver_logic 接收者逻辑槽位
     */
-    bool RequestAllocateShm(const std::string& sender_shm_name,
-        const std::string& receiver_shm_name, uint32_t slot_size, uint32_t slot_count,
-        const std::string& new_shm_name);
+    bool RequestAllocateShm(uint8_t sender_logic, uint8_t receiver_logic,
+        uint32_t slot_size, uint32_t slot_count, const std::string& new_shm_name);
 
     /**
      * @brief 请求释放共享内存（可任意线程直调）
+     * @param force 0 正常释放，1 强制释放
     */
-    bool RequestReleaseShm(const std::string& shm_name);
+    bool RequestReleaseShm(const std::string& shm_name, uint8_t force = RELEASE_SHM_NORMAL);
 
     /**
      * @brief 按共享内存名称创建接收线程；已存在则返回已有实例，shm 未就绪返回空
@@ -181,6 +184,12 @@ private:
      * @param tag 消息数据
     */
     void handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag);
+
+    /**
+     * @brief 禁止收发后释放本地共享内存；仍有发送则 1 秒后重试
+     * 守护进程 delete_shm，业务进程 Close
+    */
+    void releaseShm(std::shared_ptr<StreamShmCreator> shm);
 
     using ShmInfoMap = std::map<std::string, std::shared_ptr<StreamShmCreator>>;
     using ReceiveWorkMap = std::map<std::string, std::shared_ptr<ReceiveWork>>;

@@ -212,10 +212,10 @@ public:
     void wakeup_recv();
 
     /**
-     * @brief 获取当前时间戳
-     * @return 相对开机的单调时钟微秒数（steady_clock / CLOCK_MONOTONIC）
-    */
-    uint64_t get_timestamp();
+     * @brief 获取正在发送的个数
+     * @return 正在发送的个数
+     */
+    uint32_t get_sending_count();
 
 private:
     /**
@@ -238,6 +238,7 @@ private:
     void* m_shm_ptr;
     bool m_is_owner;
     uint64_t m_slot_timeout;
+    std::atomic<uint32_t> m_sending_count{0}; // 正在发送的个数
 };
 
 template<typename Header>
@@ -245,6 +246,15 @@ int StreamShmCreator::send_impl(Header* hdr, std::shared_ptr<TagSendMessage> buf
 {
     if (!hdr || !buf_msg || (hdr->m_flag.load(std::memory_order_acquire) & Define::BIT0) == 0)
         return -1;
+    m_sending_count.fetch_add(1, std::memory_order_release);
+    struct DecSending // 出函数自动减少正在发送的个数
+    {
+        std::atomic<uint32_t>& n;
+        ~DecSending()
+        {
+            n.fetch_sub(1, std::memory_order_release);
+        }
+    } dec{m_sending_count};
 
     // 线格式: [4B payload_len][2B message_id][data...]，payload_len = 2 + data.size()
     uint32_t old_tail, new_tail;
@@ -329,7 +339,7 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
         return 0;
 
     // 用于计算槽接收超时
-    uint64_t start_time = get_timestamp();
+    uint64_t start_time = Standard::GetTimestamp();
 
     uint32_t head, slice_count = 0, slices_done = 0, t_msg_index = 0, tail_last = 0;
     head = hdr->m_head.load(std::memory_order_acquire);
@@ -339,7 +349,7 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
         // 如果已经提交了标志位
         if (hdr->m_data[head].m_commit.load(std::memory_order_acquire) == COMMIT_TRUE)
         {
-            start_time = get_timestamp();
+            start_time = Standard::GetTimestamp();
             const uint8_t slice_id = hdr->m_data[head].m_slice_id.load(std::memory_order_acquire);
             hdr->m_data[head].m_slice_id.store(0, std::memory_order_release);
             if (slice_count == 0)
@@ -408,9 +418,9 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
             if (tail_last != not_commit_head)
             {
                 tail_last = not_commit_head;
-                start_time = get_timestamp();
+                start_time = Standard::GetTimestamp();
             }
-            else if (get_timestamp() - start_time > m_slot_timeout)
+            else if (Standard::GetTimestamp() - start_time > m_slot_timeout)
             {
                 // 进入这里说明找到了一直未提交的tail，进入超时处理
                 LOG_ERROR("StreamShmCreator::recv_impl timeout, name=%s, head=%d, not_commit_head=%d, data_size=%zu",

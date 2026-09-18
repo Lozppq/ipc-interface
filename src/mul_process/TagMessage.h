@@ -15,8 +15,6 @@ namespace IpcInterface
 namespace MulProcess
 {
 
-class StreamShmCreator;
-
 #ifndef kSendMaxRetry
 #define kSendMaxRetry 5
 #endif
@@ -25,7 +23,6 @@ struct TagSendMessage
 {
     std::vector<uint8_t> m_data;
     uint16_t m_message_id{0};
-    std::shared_ptr<StreamShmCreator> m_shm;
 };
 
 struct TagReceiveMessage

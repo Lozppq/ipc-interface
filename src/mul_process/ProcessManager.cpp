@@ -16,7 +16,7 @@ namespace MulProcess
 {
 
 ProcessManager::ProcessManager()
-    : MessageThread()
+    : MessageThread(1024, "ProcessManager")
 {
 }
 
@@ -58,12 +58,12 @@ void ProcessManager::createProcess(std::string shm_name, std::string process_exe
 {
     if (isAllowCreateProcess(shm_name))
     {
-        if (m_process_started_callback)
-            m_process_started_callback(shm_name);
         uint32_t pid = startProcess(process_executable_name);
         if (pid > 0)
         {
             m_process_infos.push_back({shm_name, process_executable_name, pid});
+            if (m_process_started_callback)
+                m_process_started_callback(shm_name);
             LOG_DEBUG("ProcessManager: create process success, shm_name: %s, pid: %d", shm_name.c_str(), pid);
         }
         else

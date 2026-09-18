@@ -40,7 +40,6 @@ LIB_SRCS := \
 	src/mul_process/ShmManager.cpp \
 	src/mul_process/StreamShmCreator.cpp \
 	src/mul_process/ReceiveWork.cpp \
-	src/mul_process/SendWork.cpp \
 	src/mul_process/ProcessManager.cpp \
 	src/log/Log_Print.cpp \
 	src/standard/api.cpp \

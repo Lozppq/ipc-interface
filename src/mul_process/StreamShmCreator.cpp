@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <chrono>
 #if defined(__linux__)
 #include <unistd.h>
 #include <sys/mman.h>
@@ -236,7 +235,7 @@ std::string StreamShmCreator::get_shm_name()
 
 void StreamShmCreator::set_flag(uint32_t flag)
 {
-    if (!m_shm_ptr)
+    if (!valid())
         return;
     static_cast<SMALLRingQueueHeader*>(m_shm_ptr)->m_flag.store(flag, std::memory_order_release);
 }
@@ -252,11 +251,11 @@ void StreamShmCreator::wakeup_recv()
 #endif
 }
 
-uint64_t StreamShmCreator::get_timestamp()
+uint32_t StreamShmCreator::get_sending_count()
 {
-    return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (!valid())
+        return 0;
+    return m_sending_count.load(std::memory_order_acquire);
 }
 
 } // namespace MulProcess

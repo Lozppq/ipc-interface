@@ -42,5 +42,8 @@ uint64_t Small_U8ToU64(const uint8_t* data);
 // 将八个u8按照大端模式转换为一个u64
 uint64_t Big_U8ToU64(const uint8_t* data);
 
+// 相对开机的单调时钟微秒数（steady_clock / CLOCK_MONOTONIC）
+uint64_t GetTimestamp();
+
 } // namespace Standard
 } // namespace IpcInterface

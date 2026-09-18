@@ -41,7 +41,7 @@ public:
     void postCreateProcess(std::string shm_name);
 
     /**
-     * @brief 即将 fork 前回调（shm_name），用于恢复通道标志等
+     * @brief 进程拉起成功后回调（shm_name），用于恢复通道标志等
     */
     using ProcessStartedCallback = std::function<void(std::string shm_name)>;
     void setProcessStartedCallback(ProcessStartedCallback callback);

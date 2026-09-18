@@ -30,7 +30,7 @@ enum : uint16_t
     MESSAGE_SUB_ID_ALLOCATE_SHM,
 
     // 向守护进程申请释放共享内存的ID，
-    // 数据部分：u8 共享内存名称长度n，n个字节的名称
+    // 数据部分：u8 共享内存名称长度n，n个字节的名称，u8 逻辑进程id，u8 0正常释放，1强制释放
     MESSAGE_SUB_ID_RELEASE_SHM,
 
     // 设置同步标志的ID，
