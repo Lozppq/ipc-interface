@@ -11,7 +11,7 @@
 | Process2 | `Process2_Fd` | `/ipc_process_2` | `process_2` | demo：周期性向 Process1 / Process3 发消息 |
 | Process3 | `Process3_Fd` | `/ipc_process_3` | `process_3` | demo：周期性向 Process1 / Process2 发消息 |
 
-名称与可执行文件定义在 `src/define/Common.h`：`kShmNames[]`、`kProcessExecutableNames[]`，下标与 `Daemon_Fd` / `ProcessN_Fd` 对齐。
+名称、可执行文件和同步初值定义在 `src/define/Common.h` 的 `kProcesses[]`（`m_shm_name`、`m_executable`、`m_sync_flag`），下标与 `Daemon_Fd` / `ProcessN_Fd` 对齐。
 
 另有进程同步 shm：`/ipc_process_sync`（`ProcessSyncInfo`）。其中 `flags[槽位]` 表示该槽是否允许拉起；`ProcessManager` 用 shm 名解析槽位后读 `flags[fd]`。
 
@@ -32,8 +32,7 @@
 
 ```bash
 cd ipc-interface
-make          # 生成 lib、daemon、demo、对照测试
-make tests    # 只编 test/（如 udp_process）
+make          # 生成 lib、daemon、demo（含 udp_process）
 make clean
 ```
 
@@ -52,7 +51,7 @@ build/bin/daemon
 build/bin/process_1
 build/bin/process_2
 build/bin/process_3      # 随 demo/*.cpp 自动生成
-build/bin/udp_process    # 本机 UDP 对照，make / make tests 生成
+build/bin/udp_process    # 本机 UDP 对照，随 demo 一起生成
 ```
 
 ## 运行 demo
@@ -66,13 +65,13 @@ cd build/bin
 ./daemon &
 ```
 
-`./daemon &` 后台运行后，守护进程会创建固定环形 shm / 同步 shm，再按 `kProcessExecutableNames` **自动拉起** `process_1`、`process_2`、`process_3` 等业务进程，无需再手动逐个启动。
+`./daemon &` 后台运行后，守护进程会创建固定环形 shm / 同步 shm，再按 `kProcesses[].m_executable` **自动拉起** `process_1`、`process_2`、`process_3` 等业务进程，无需再手动逐个启动。
 
 进程间通过各自固定 inbox 互发 `MESSAGE_ID_PROCESS`；日志中可看到收发与 `setReceiveHandler` 回调。
 
 ## 性能
 
-双核 CPU、同条件小包互发（约 1KB 载荷、三进程互相收发）下：
+双核 CPU、同条件小包互发（约 2KB 固定载荷、三进程互相收发）下：
 
 | 通道 | 吞吐 |
 |------|------|
@@ -82,11 +81,11 @@ cd build/bin
 
 槽位越大，分片越少，吞吐大致按倍数上升。共享内存软中断基本为 **0**，内核态:用户态 CPU 占用比约 **6.5:3.5**；Unix DGRAM 软中断约占 **20%** CPU，抢占调度更高。
 
-对照程序是 `test/udp_process.cpp`，载荷与 `demo/process_1/2/3` 相同（`n∈[1,1000]` 个 `uint16`，不发给自己），走 `127.0.0.1` UDP，端口 `51001~51003`。三个进程都要起，少一个则有一半包打到空端口，数字会对不齐。
+对照程序是 `demo/udp_process.cpp`，载荷与 `demo/process_1/2/3` 相同（固定 `n=1000` 个 `uint16`，约 2KB，不发给自己），走 `127.0.0.1` UDP，端口 `51001~51003`。三个进程都要起，少一个则有一半包打到空端口，数字会对不齐。
 
 ```bash
 cd /path/to/ipc-interface
-make tests                  # 或 make
+make                        # 或 make demos
 cd build/bin
 ./udp_process 1             # 三个终端各跑一个
 ./udp_process 2
@@ -136,7 +135,7 @@ int main() {
 }
 ```
 
-- `initParams(本进程队列名)`：非 daemon 会登记所有 `kShmNames`，便于打开发送目标队列
+- `initParams(本进程队列名)`：非 daemon 会登记所有 `kProcesses`，便于打开发送目标队列
 - `setReceiveHandler`：须在 `start()` **之前**注册；回调只覆盖本进程**固定 inbox**上的 `MESSAGE_ID_PROCESS`
 - `send(tag, 目标 shm 名)`：在**调用线程**写入对端接收环；失败时最多重试 `kSendMaxRetry`（5）次并 `sched_yield`。业务互通用 `MESSAGE_ID_PROCESS`
 - daemon 协议（ALLOCATE / RELEASE / SET_SYNC_FLAG）走内部 `onReceiveMessage`，不进 `setReceiveHandler`
@@ -164,7 +163,7 @@ int main() {
 
 ```cpp
 #include "mul_process/ShmManager.h"
-#include "mul_process/StreamShmCreator.h"  // SIZE_64B / SIZE_1KB / SIZE_256KB
+#include "mul_process/StreamShmCreator.h"  // SIZE_64B / SIZE_256B / SIZE_1KB / SIZE_256KB
 #include "define/Common.h"
 
 auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
@@ -172,18 +171,18 @@ auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
 // 参数含义：
 //   sender_logic    — 发送侧逻辑槽位（如 Process1_Fd）；多发送者传 INVALID_FD
 //   receiver_logic  — 接收侧逻辑槽位（如 Process2_Fd）
-//   slot_size       — 单槽字节数，必须是 SIZE_64B / SIZE_1KB / SIZE_256KB 之一
+//   slot_size       — 单槽字节数，必须是 SIZE_64B / SIZE_256B / SIZE_1KB / SIZE_256KB 之一
 //   slot_count      — 槽个数（如 1024）
-//   new_shm_name    — 新通道名，必须以 '/' 开头，且不在 kShmNames 固定表中
+//   new_shm_name    — 新通道名，必须以 '/' 开头，且不在 kProcesses 固定表中
 //                     （如 "/ipc_dyn_p1_to_p2"）
 mgr->RequestAllocateShm(
     IpcInterface::Define::Process1_Fd,
     IpcInterface::Define::Process2_Fd,
-    IpcInterface::MulProcess::SIZE_64B,
+    IpcInterface::MulProcess::SIZE_256B,
     1024,
     "/ipc_dyn_p1_to_p2");
 // 接收者申请多发送者通道：
-// mgr->RequestAllocateShm(INVALID_FD, Process2_Fd, SIZE_64B, 1024, "/ipc_dyn_to_p2");
+// mgr->RequestAllocateShm(INVALID_FD, Process2_Fd, SIZE_256B, 1024, "/ipc_dyn_to_p2");
 ```
 
 注意：
@@ -239,23 +238,21 @@ mgr->RequestReleaseShm("/ipc_dyn_p1_to_p2");
 | | 固定通道 | 动态通道 |
 |--|----------|----------|
 | 创建 | daemon 启动创建 | 业务 `RequestAllocateShm` |
-| 名称 | `kShmNames[]` | 自定义 `/...`，勿与固定名冲突 |
+| 名称 | `kProcesses[].m_shm_name` | 自定义 `/...`，勿与固定名冲突 |
 | 收消息 | `setReceiveHandler` | `createReceiveWork` |
 | 发消息 | `send(tag, ProcessN)` | `send(tag, new_shm_name)` |
 | 释放 | 一般不释放 | `RequestReleaseShm` |
 
 ### 增加新业务进程
 
-在 `Common.h` 中按同一下标同步扩展（插在 `INVALID_FD` 之前）：
+在 `Common.h` 中按同一槽位扩展（枚举插在 `INVALID_FD` 之前）：
 
-1. `kShmNames` 增加 `/ipc_process_N`
-2. `kProcessExecutableNames` 增加 `./process_N`
-3. 枚举增加 `ProcessN_Fd`
-4. 如有对应别名常量（`ProcessN`）一并补上
-5. 在 `demo/` 增加 `process_N.cpp`，`make` 后产物为 `build/bin/process_N`
-6. `kProcessSyncFlagInitValues` 增加对应初值（见下节）
+1. 枚举增加 `ProcessN_Fd`
+2. `kProcesses` 增加一行：`{ "/ipc_process_N", "./process_N", PROCESS_SYNC_FLAG_DONE }`
+3. 如有对应别名常量（`ProcessN`）一并补上
+4. 在 `demo/` 增加 `process_N.cpp`，`make` 后产物为 `build/bin/process_N`
 
-编译期 `static_assert` 会检查槽位与表长度是否一致。
+编译期 `static_assert` 会检查 `INVALID_FD` 与 `kProcesses` 行数是否一致。
 
 ### 进程同步（`Common.h`）
 
@@ -263,7 +260,7 @@ mgr->RequestReleaseShm("/ipc_dyn_p1_to_p2");
 
 - `m_flags[Daemon_Fd / ProcessN_Fd]`：该槽是否允许 daemon 拉起对应可执行文件（**槽位枚举，不是系统 fd**）
 - `PROCESS_SYNC_FLAG_NONE`（0）：未就绪，不拉起；`PROCESS_SYNC_FLAG_DONE`（1）：允许拉起
-- `kProcessSyncFlagInitValues[]`：daemon 创建同步 shm 时的初值，下标必须与 `kShmNameCount` 一致
+- `kProcesses[].m_sync_flag`：daemon 创建同步 shm 时该槽的初值
 - `ProcessSyncShmName`：`/ipc_process_sync`
 
 `ProcessManager` 只在 `flags[槽位] == DONE` 时 `fork/exec`；为 `NONE` 或拉起失败时每 **1000ms** 重试，直到被置为 `DONE`。崩溃后重新拉起也走同一检查。
@@ -272,11 +269,11 @@ mgr->RequestReleaseShm("/ipc_dyn_p1_to_p2");
 
 ```cpp
 // Common.h：process_3 初始不拉起
-constexpr uint8_t kProcessSyncFlagInitValues[] = {
-    PROCESS_SYNC_FLAG_DONE,  // Daemon
-    PROCESS_SYNC_FLAG_DONE,  // Process1
-    PROCESS_SYNC_FLAG_DONE,  // Process2
-    PROCESS_SYNC_FLAG_NONE,  // Process3，等别人置 DONE
+constexpr ProcessDesc kProcesses[] = {
+    { "/ipc_daemon", "./daemon", PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_process_1", "./process_1", PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_process_2", "./process_2", PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_process_3", "./process_3", PROCESS_SYNC_FLAG_NONE },  // 等别人置 DONE
 };
 ```
 
@@ -309,7 +306,6 @@ demo/
   process_1.cpp
   process_2.cpp
   process_3.cpp
-test/
   udp_process.cpp  # 本机 UDP 吞吐对照
 Makefile
 ```

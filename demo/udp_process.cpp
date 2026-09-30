@@ -17,7 +17,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <random>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -130,17 +129,14 @@ int main(int argc, char* argv[])
 
     LOG_INFO("udp_%d started, pid=%d port=%u", id, getpid(), my_port);
 
-    std::mt19937 rng{std::random_device{}()};
-    std::uniform_int_distribution<int> dist(500, MAX_N);
+    std::vector<uint8_t> msg((1u + MAX_N) * sizeof(uint16_t));
+    auto* p = reinterpret_cast<uint16_t*>(msg.data());
+    p[0] = MAX_N;
+    for (uint16_t i = 1; i <= MAX_N; ++i)
+        p[i] = i;
 
     while (true)
     {
-        const uint16_t n = static_cast<uint16_t>(dist(rng));
-        std::vector<uint8_t> msg((1u + n) * sizeof(uint16_t));
-        auto* p = reinterpret_cast<uint16_t*>(msg.data());
-        p[0] = n;
-        for (uint16_t i = 1; i <= n; ++i)
-            p[i] = i;
         for (int i = 0; i < kProcCount; ++i)
         {
             if (i + 1 == id)

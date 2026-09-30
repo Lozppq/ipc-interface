@@ -8,7 +8,6 @@
 #include "log/Log_Print.h"
 #include <atomic>
 #include <cstdint>
-#include <random>
 #include <thread>
 #include <unistd.h>
 
@@ -66,24 +65,21 @@ int main()
 
     LOG_INFO("process_1 started, pid=%d", getpid());
 
-    std::mt19937 rng{std::random_device{}()};
-    std::uniform_int_distribution<int> dist(500, MAX_N);
+    auto tag = std::make_shared<IpcInterface::MulProcess::TagSendMessage>();
+    tag->m_data.resize((1u + MAX_N) * sizeof(uint16_t));
+    auto* p = reinterpret_cast<uint16_t*>(tag->m_data.data());
+    p[0] = MAX_N;
+    for (uint16_t i = 1; i <= MAX_N; ++i)
+        p[i] = i;
+    tag->m_message_id = IpcInterface::Define::MESSAGE_ID_PROCESS;
 
     while (true)
     {
-        auto tag = std::make_shared<IpcInterface::MulProcess::TagSendMessage>();
-        const uint16_t n = static_cast<uint16_t>(dist(rng));
-        tag->m_data.resize((1u + n) * sizeof(uint16_t));
-        auto* p = reinterpret_cast<uint16_t*>(tag->m_data.data());
-        p[0] = n;
-        for (uint16_t i = 1; i <= n; ++i)
-            p[i] = i;
-        tag->m_message_id = IpcInterface::Define::MESSAGE_ID_PROCESS;
         for (uint8_t i = 0; i < IpcInterface::Define::kShmNameCount; i++)
         {
             if (i == IpcInterface::Define::Daemon_Fd || i == IpcInterface::Define::Process1_Fd)
                 continue;
-            if (mgr->send(tag, IpcInterface::Define::kShmNames[i]))
+            if (mgr->send(tag, IpcInterface::Define::kProcesses[i].m_shm_name))
             {
                 send_bytes.fetch_add(tag->m_data.size(), std::memory_order_relaxed);
                 send_pkts.fetch_add(1, std::memory_order_relaxed);

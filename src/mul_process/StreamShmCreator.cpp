@@ -29,6 +29,9 @@ StreamShmCreator::StreamShmCreator(const std::string& name, uint32_t slot_size, 
         case SIZE_64B:
             m_slot_timeout = TIMEOUT_64B;
             break;
+        case SIZE_256B:
+            m_slot_timeout = TIMEOUT_256B;
+            break;
         case SIZE_1KB:
             m_slot_timeout = TIMEOUT_1KB;
             break;
@@ -36,7 +39,7 @@ StreamShmCreator::StreamShmCreator(const std::string& name, uint32_t slot_size, 
             m_slot_timeout = TIMEOUT_256KB;
             break;
         default:
-            m_slot_timeout = TIMEOUT_64B;
+            m_slot_timeout = TIMEOUT_256B;
             break;
     }
 }
@@ -81,9 +84,11 @@ bool StreamShmCreator::create_shm(bool create)
 
     if (create)
     {
-        sem_init(&header->m_sem, 1, 0);
+        for (uint8_t i = 0; i < MAX_READER_COUNT; i++)
+            sem_init(&header->m_sem[i], 1, 0);
         header->m_slot_size.store(m_slot_size, std::memory_order_relaxed);
         header->m_slot_count.store(m_slot_count, std::memory_order_relaxed);
+        header->m_reader_flag.store(0, std::memory_order_relaxed);
         header->m_flag.store(Define::BIT0 | Define::BIT1, std::memory_order_release);
     }
     else
@@ -92,6 +97,7 @@ bool StreamShmCreator::create_shm(bool create)
             return false;
         m_slot_size = header->m_slot_size.load(std::memory_order_acquire);
         m_slot_count = header->m_slot_count.load(std::memory_order_acquire);
+        m_local_head = header->m_tail.load(std::memory_order_acquire);
     }
     return true;
 #else
@@ -143,7 +149,8 @@ void StreamShmCreator::delete_shm()
     {
         SMALLRingQueueHeader* header = static_cast<SMALLRingQueueHeader*>(m_shm_ptr);
         header->m_flag.store(0, std::memory_order_release);
-        sem_post(&header->m_sem);
+        for (uint8_t i = 0; i < MAX_READER_COUNT; i++)
+            sem_post(&header->m_sem[i]);
         Close();
         shm_unlink(m_shm_name.c_str());
     }
@@ -186,6 +193,8 @@ int StreamShmCreator::send(std::shared_ptr<TagSendMessage> buf_msg)
     {
         case SIZE_64B:
             return send_impl(static_cast<SMALLRingQueueHeader*>(m_shm_ptr), buf_msg);
+        case SIZE_256B:
+            return send_impl(static_cast<SMALL256RingQueueHeader*>(m_shm_ptr), buf_msg);
         case SIZE_1KB:
             return send_impl(static_cast<MEDIUMRingQueueHeader*>(m_shm_ptr), buf_msg);
         case SIZE_256KB:
@@ -203,6 +212,8 @@ uint32_t StreamShmCreator::recv(std::shared_ptr<TagReceiveMessage> buf_msg)
     {
         case SIZE_64B:
             return recv_impl(static_cast<SMALLRingQueueHeader*>(m_shm_ptr), buf_msg);
+        case SIZE_256B:
+            return recv_impl(static_cast<SMALL256RingQueueHeader*>(m_shm_ptr), buf_msg);
         case SIZE_1KB:
             return recv_impl(static_cast<MEDIUMRingQueueHeader*>(m_shm_ptr), buf_msg);
         case SIZE_256KB:
@@ -217,15 +228,21 @@ bool StreamShmCreator::is_empty()
     if (!valid())
         return true;
     auto* h = static_cast<SMALLRingQueueHeader*>(m_shm_ptr);
-    return h->m_head.load(std::memory_order_acquire) == h->m_tail.load(std::memory_order_acquire);
+    uint32_t t = h->m_tail.load(std::memory_order_acquire);
+    uint8_t mask = h->m_reader_flag.load(std::memory_order_acquire);
+    return mask == 0 || slowest_head(h, mask, t) == t;
 }
 
 bool StreamShmCreator::is_full()
 {
-    if (!valid())
+    if (!valid() || m_slot_count <= 1)
         return true;
     auto* h = static_cast<SMALLRingQueueHeader*>(m_shm_ptr);
-    return (h->m_tail.load(std::memory_order_acquire) + 1) % m_slot_count == h->m_head.load(std::memory_order_acquire);
+    uint32_t t = h->m_tail.load(std::memory_order_acquire);
+    uint8_t mask = h->m_reader_flag.load(std::memory_order_acquire);
+    if (mask == 0)
+        return true;
+    return t - slowest_head(h, mask, t) >= m_slot_count - 1;
 }
 
 std::string StreamShmCreator::get_shm_name()
@@ -247,7 +264,7 @@ void StreamShmCreator::wakeup_recv()
         return;
     auto* hdr = static_cast<SMALLRingQueueHeader*>(m_shm_ptr);
     hdr->m_flag.fetch_and(~static_cast<uint32_t>(Define::BIT1), std::memory_order_release);
-    sem_post(&hdr->m_sem);
+    post_reader_sems(hdr, hdr->m_reader_flag.load(std::memory_order_acquire));
 #endif
 }
 
@@ -256,6 +273,63 @@ uint32_t StreamShmCreator::get_sending_count()
     if (!valid())
         return 0;
     return m_sending_count.load(std::memory_order_acquire);
+}
+
+uint8_t StreamShmCreator::get_reader_flag()
+{
+    if (!valid())
+        return 0;
+    return static_cast<SMALLRingQueueHeader*>(m_shm_ptr)->m_reader_flag.load(std::memory_order_acquire);
+}
+
+uint8_t StreamShmCreator::alloc_reader_slot()
+{
+    if (!valid())
+        return INVALID_READER_INDEX;
+    auto* h = static_cast<SMALLRingQueueHeader*>(m_shm_ptr);
+    uint8_t old = h->m_reader_flag.load(std::memory_order_acquire);
+    while (true)
+    {
+        uint8_t i = 0;
+        for (; i < MAX_READER_COUNT; i++)
+        {
+            if ((old & static_cast<uint8_t>(1u << i)) == 0)
+                break;
+        }
+        if (i >= MAX_READER_COUNT)
+            return INVALID_READER_INDEX;
+        h->m_reader_head[i].store(h->m_tail.load(std::memory_order_acquire), std::memory_order_release);
+        uint8_t neu = static_cast<uint8_t>(old | static_cast<uint8_t>(1u << i));
+        if (h->m_reader_flag.compare_exchange_weak(old, neu,
+                std::memory_order_release, std::memory_order_acquire))
+            return i;
+    }
+}
+
+void StreamShmCreator::free_reader_slot(uint8_t index)
+{
+    if (!valid() || index >= MAX_READER_COUNT)
+        return;
+    auto* h = static_cast<SMALLRingQueueHeader*>(m_shm_ptr);
+    h->m_reader_flag.fetch_and(static_cast<uint8_t>(~static_cast<uint8_t>(1u << index)),
+        std::memory_order_release);
+#if defined(__linux__)
+    sem_post(&h->m_sem[index]);
+#endif
+}
+
+void StreamShmCreator::drop_reader(uint8_t index)
+{
+    free_reader_slot(index);
+}
+
+void StreamShmCreator::set_reader_index(uint8_t index)
+{
+    m_reader_index = index;
+    if (!valid() || index >= MAX_READER_COUNT)
+        return;
+    auto* h = static_cast<SMALLRingQueueHeader*>(m_shm_ptr);
+    m_local_head = h->m_reader_head[index].load(std::memory_order_acquire);
 }
 
 } // namespace MulProcess

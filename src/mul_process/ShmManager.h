@@ -8,6 +8,8 @@
 
 #pragma once
 #include "../model/MessageThread.h"
+#include "PidNameInfo.h"
+#include "TagMessage.h"
 #include "StreamShmCreator.h"
 #include "ReceiveWork.h"
 #include <atomic>
@@ -18,25 +20,21 @@
 #include <memory>
 #include <map>
 #include <functional>
+#include <mutex>
 
 namespace IpcInterface
 {
 namespace MulProcess
 {
 
-// 共享内存名称与逻辑进程槽位映射；sender==INVALID_FD 表示多个发送者
-typedef struct
-{
-    std::string m_shm_name;      // 共享内存名称
-    uint8_t m_sender_logic;      // 发送者逻辑槽位，INVALID_FD 表示多个发送者
-    uint8_t m_receiver_logic;    // 接收者逻辑槽位
-} PidNameInfo;
-
 enum : uint8_t
 {
     RELEASE_SHM_NORMAL = 0,
     RELEASE_SHM_FORCE = 1,
 };
+
+constexpr uint8_t HEARTBEAT_TIMEOUT_SEC = 5;
+constexpr int INVALID_FD = -1;
 
 using SyncFlagCallback = std::function<void(uint8_t logic_id, uint8_t flag)>;
 using StartProcessCallback = std::function<void(std::string shm_name, uint8_t logic_id)>;
@@ -95,11 +93,13 @@ public:
 
     /**
      * @brief 请求申请分配共享内存（可任意线程直调）
-     * @param sender_logic 发送者逻辑槽位，INVALID_FD 表示多发送者
-     * @param receiver_logic 接收者逻辑槽位
+     * @param role 0 发送者，1 接收者
     */
-    bool RequestAllocateShm(uint8_t sender_logic, uint8_t receiver_logic,
-        uint32_t slot_size, uint32_t slot_count, const std::string& new_shm_name);
+    bool RequestAllocateShm(uint8_t role, uint32_t slot_size, uint32_t slot_count,
+        const std::string& new_shm_name, ReceiveHandler handler = {});
+    void setReceiverHandler(const std::string& shm_name, ReceiveHandler handler);
+    void removeReceiverHandler(const std::string& shm_name);
+    ReceiveHandler findReceiverHandler(const std::string& shm_name);
 
     /**
      * @brief 请求释放共享内存（可任意线程直调）
@@ -149,6 +149,9 @@ private:
      * @return 共享内存名称，无效返回空字符串
      */
     std::string lookupShmNameByLogicId(uint8_t logic_id) const;
+    std::vector<PidNameInfo>::iterator findPidNameInfo(const std::string& shm_name);
+    bool parseAllocateShm(const std::vector<uint8_t>& data, AllocateShmPayload& out);
+    bool parseReleaseShm(const std::vector<uint8_t>& data, ReleaseShmPayload& out);
 
 protected:
     void OnThreadInit() override;
@@ -174,16 +177,34 @@ private:
     void tryStartFixedProcesses();
 
     /**
+     * @brief 处理定时器消息
+    */
+    void OnTimer(int timer_fd);
+
+    /**
+     * @brief 处理心跳定时器
+    */
+    void handleHeartbeatTimer();
+    
+    /**
      * @brief 处理守护进程消息
      * @param tag 消息数据
     */
     void handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag);
+    void handleDaemon_AllocateShm(TagReceiveMessage& tag);
+    void handleDaemon_ReleaseShm(TagReceiveMessage& tag);
+    void handleDaemon_SetSyncFlag(TagReceiveMessage& tag);
+    void handleDaemon_Heartbeat(TagReceiveMessage& tag);
+    void sendHeartbeat();
+    void checkHeartbeatTimeout();
 
     /**
      * @brief 处理业务进程消息
      * @param tag 消息数据
     */
     void handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag);
+    void handleProcess_AllocateShm(TagReceiveMessage& tag);
+    void handleProcess_ReleaseShm(TagReceiveMessage& tag);
 
     /**
      * @brief 禁止收发后释放本地共享内存；仍有发送则 1 秒后重试
@@ -210,9 +231,13 @@ private:
     // 初始化进程id与消息接口名称映射
     std::vector<PidNameInfo> m_pidNameInfos;
     ReceiveHandler m_receive_handler{NULL};
+    std::mutex m_receive_handler_mutex;
+    std::unordered_map<std::string, ReceiveHandler> m_receive_handlers;
     SyncFlagCallback m_sync_flag_callback{NULL};
     StartProcessCallback m_start_process_callback{NULL};
     bool m_fixed_processes_started{false};
+    uint8_t m_heartbeat_remain[Define::kShmNameCount]{};
+    int m_heartbeat_timer_fd{INVALID_FD};
 };
 
 } // namespace MulProcess

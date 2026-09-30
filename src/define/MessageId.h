@@ -26,7 +26,8 @@ enum : uint16_t
 enum : uint16_t
 {
     // 向守护进程申请分配共享内存的ID，
-    // 数据部分：u8 发送者逻辑进程id，u8 接收者逻辑进程id，u32 单槽位大小，u32 槽位数量，u8 名称长度n，n个字节的名称
+    // 数据部分：u8 逻辑进程id，u8 0代表发送者，1代表接收者，u32 单槽位大小，u32 槽位数量，u8 名称长度n，n个字节的名称
+    // 接收者回包在末尾追加 u8 读者下标（0..MAX_READER_COUNT-1），（如果是读者发给业务进程多一个u8，则代表读者标志位是第几位）
     MESSAGE_SUB_ID_ALLOCATE_SHM,
 
     // 向守护进程申请释放共享内存的ID，
@@ -36,6 +37,10 @@ enum : uint16_t
     // 设置同步标志的ID，
     // 数据部分：u8 逻辑进程id，u8 同步标志
     MESSAGE_SUB_ID_SET_SYNC_FLAG,
+
+    // 业务进程发给守护进程的心跳，
+    // 数据部分：u8 逻辑进程id
+    MESSAGE_SUB_ID_HEARTBEAT,
 };
 
 } // namespace Define

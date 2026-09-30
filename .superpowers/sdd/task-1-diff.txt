@@ -1,0 +1,188 @@
+﻿diff --git a/src/mul_process/ReceiveWork.cpp b/src/mul_process/ReceiveWork.cpp
+index 570ff42..8131afe 100644
+--- a/src/mul_process/ReceiveWork.cpp
++++ b/src/mul_process/ReceiveWork.cpp
+@@ -9,38 +9,47 @@
+ namespace IpcInterface {
+ namespace MulProcess {
+ 
+ ReceiveWork::ReceiveWork(StreamShmCreator* shm, ReceiveHandler handler, std::string name)
+     : MessageThread(1024, std::move(name)), 
+     shm_(shm), 
+     receive_handler_(handler), 
+     name_(std::move(name)) {}
+ 
+ ReceiveWork::~ReceiveWork() {
++    stop();
+     receive_handler_ = NULL;
+     shm_ = NULL;
+ }
+ 
+ void ReceiveWork::setReceiveHandler(ReceiveHandler handler) {
+     receive_handler_ = std::move(handler);
+ }
+ 
++void ReceiveWork::stop() {
++    setRunning(false);
++    if (shm_) {
++        shm_->wakeup_recv();
++    }
++    MessageThread::stop();
++}
++
+ void ReceiveWork::ReceiveMessage() {
+     if (!isRunning() || !shm_ || !receive_handler_) {
+         return;
+     }
+     std::shared_ptr<TagReceiveMessage> buf_msg_ = std::make_shared<TagReceiveMessage>();
+     if (shm_->recv(buf_msg_) > 0) {
+         receive_handler_(buf_msg_);
+-    } else {
++    } else if (isRunning()) {
+         LOG_ERROR("ReceiveWork: ReceiveMessage failed, shm_name = %s", shm_->get_shm_name().c_str());
+     }
+ }
+ 
+ void ReceiveWork::OnThreadInit() {
+     startTimer(0, [this]() {
+         ReceiveMessage();
+     });
+ }
+ 
+ } // namespace MulProcess
+-} // namespace IpcInterface
+\ No newline at end of file
++} // namespace IpcInterface
+diff --git a/src/mul_process/StreamShmCreator.cpp b/src/mul_process/StreamShmCreator.cpp
+index 928ba5c..cc42fc1 100644
+--- a/src/mul_process/StreamShmCreator.cpp
++++ b/src/mul_process/StreamShmCreator.cpp
+@@ -207,20 +207,31 @@ std::string StreamShmCreator::get_shm_name() {
+     return shm_name_;
+ }
+ 
+ void StreamShmCreator::set_flag(uint32_t flag) {
+     if (!shm_ptr_) {
+         return;
+     }
+     static_cast<SMALLRingQueueHeader*>(shm_ptr_)->flag.store(flag, std::memory_order_release);
+ }
+ 
++void StreamShmCreator::wakeup_recv() {
++#if defined(__linux__)
++    if (!valid()) {
++        return;
++    }
++    auto* hdr = static_cast<SMALLRingQueueHeader*>(shm_ptr_);
++    hdr->flag.fetch_and(~static_cast<uint32_t>(Define::BIT1), std::memory_order_release);
++    sem_post(&hdr->sem);
++#endif
++}
++
+ uint32_t StreamShmCreator::get_receiver_pid() const {
+     if (!valid()) {
+         return 0;
+     }
+     return static_cast<const SMALLRingQueueHeader*>(shm_ptr_)->receiver_pid.load(std::memory_order_acquire);
+ }
+ 
+ uint32_t StreamShmCreator::get_senders_pid() const {
+     if (!valid()) {
+         return 0;
+diff --git a/src/mul_process/StreamShmCreator.h b/src/mul_process/StreamShmCreator.h
+index 8a5e1a1..38a7e8f 100644
+--- a/src/mul_process/StreamShmCreator.h
++++ b/src/mul_process/StreamShmCreator.h
+@@ -198,20 +198,25 @@ public:
+      * @return 鍏变韩鍐呭瓨鍚嶇О
+      */
+     std::string get_shm_name(); 
+     
+     /**
+      * @brief 璁剧疆鏍囧織浣?
+      * @param flag 鏍囧織浣?
+      */
+     void set_flag(uint32_t flag);
+ 
++    /**
++     * @brief 娓呴櫎鎺ユ敹鍏佽浣嶅苟鍞ら啋闃诲鍦?recv 涓婄殑 sem_wait
++     */
++    void wakeup_recv();
++
+     /**
+      * @brief 鑾峰彇鎺ユ敹鑰?pid
+      * @return 鎺ユ敹鑰?pid锛屾棤鏁堟椂杩斿洖 0
+      */
+     uint32_t get_receiver_pid() const;
+ 
+     /**
+      * @brief 璁剧疆鎺ユ敹鑰?pid
+      * @param receiver_pid 鎺ユ敹鑰?pid
+      */
+@@ -350,31 +355,36 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
+ #endif
+ 
+     // 涓嶅厑璁告帴鏀讹紝閫€鍑洪€昏緫闇€瑕佹竻鐞?
+     if ((hdr->flag.load(std::memory_order_acquire) & Define::BIT1) == 0) {
+         return 0;
+     }
+ 
+     // 鐢ㄤ簬璁＄畻妲芥帴鏀惰秴鏃?
+     uint64_t start_time = get_timestamp();
+ 
+-    uint32_t head, slice_count = 0, t_msg_index = 0, tail_last = 0;
++    uint32_t head, slice_count = 0, slices_done = 0, t_msg_index = 0, tail_last = 0;
+     head = hdr->head.load(std::memory_order_acquire);
+     // 鑾峰彇鏁版嵁
+     while (1) {
+         // 濡傛灉宸茬粡鎻愪氦浜嗘爣蹇椾綅
+         if (hdr->data[head].commit.load(std::memory_order_acquire) == COMMIT_TRUE) {
+             start_time = get_timestamp();
+             if (slice_count == 0) {
+                 slice_count = hdr->data[head].slice_count.load(std::memory_order_acquire);
+                 hdr->data[head].slice_id.store(0, std::memory_order_release);
+                 hdr->data[head].slice_count.store(0, std::memory_order_release);
++                if (slice_count == 0) {
++                    hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
++                    head = (head + 1) % slot_count_;
++                    continue;
++                }
+                 // 棰勮buf鐨勬€诲ぇ灏忎负绗竴涓猻lice鐨刣ata鍓嶅洓涓瓧鑺傜粍鎴愮殑鏃犵鍙锋暟澶у皬
+                 uint32_t total_len = Standard::Small_U8ToU32(hdr->data[head].data);
+                 if (total_len == 0) {
+                     hdr->head.store(head + 1, std::memory_order_release);
+                     hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
+                     slice_count = 0;
+                     continue;
+                 }
+                 if (total_len < 2 || slot_size_ < 6) {
+                     hdr->head.store(head + 1, std::memory_order_release);
+@@ -395,24 +405,26 @@ uint32_t StreamShmCreator::recv_impl(Header* hdr, std::shared_ptr<TagReceiveMess
+                 t_msg_index = first_copy;
+             } else {
+                 uint32_t remain = static_cast<uint32_t>(buf_msg->data.size()) - t_msg_index;
+                 uint32_t copy_len = (remain < slot_size_) ? remain : slot_size_;
+                 if (copy_len > 0) {
+                     memcpy(buf_msg->data.data() + t_msg_index, hdr->data[head].data, copy_len);
+                 }
+                 t_msg_index += copy_len;
+             }
+             hdr->data[head].commit.store(COMMIT_FALSE, std::memory_order_release);
+-            if (slice_count == hdr->data[head].slice_id.load(std::memory_order_acquire)) {
++            slices_done++;
++            head = (head + 1) % slot_count_;
++            // 宸叉敹榻愰鐗囧０鏄庣殑 slice_count 鐗囧垯缁撴潫锛堝嬁鐢ㄨ娓呴浂鐨?slice_id 鍒ゆ柇锛?
++            if (slice_count > 0 && slices_done >= slice_count) {
+                 break;
+             }
+-            head = (head + 1) % slot_count_;
+         } else {
+             // 鍚彂寮忔帰绱細杩欓噷闇€瑕佽绠楋紝濡傛灉绛夊緟褰撳墠妲戒綅鍒板浐瀹歵ail瓒呮椂锛屽垯鐩存帴灏嗗綋鍓嶆Ы浣嶆暟鎹涪寮冨啀break
+             uint32_t tail = hdr->tail.load(std::memory_order_acquire);
+             uint32_t not_commit_head = head, not_commit_tail;
+             if ((tail - head + slot_count_) % slot_count_ > MAX_SLICE_COUNT){
+                 not_commit_tail = (head + MAX_SLICE_COUNT) % slot_count_;
+             } else {
+                 not_commit_tail = tail;
+             }
+ 

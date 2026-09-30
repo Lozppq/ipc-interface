@@ -15,14 +15,37 @@
 #include <atomic>
 #include <cstring>
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #if defined(__linux__)
 #include <sched.h>
 #endif
+
 namespace IpcInterface
 {
 namespace MulProcess
 {
+
+void ShmManager::setReceiverHandler(const std::string& shm_name, ReceiveHandler handler)
+{
+    std::lock_guard<std::mutex> lock(m_receive_handler_mutex);
+    m_receive_handlers[shm_name] = std::move(handler);
+}
+
+void ShmManager::removeReceiverHandler(const std::string& shm_name)
+{
+    std::lock_guard<std::mutex> lock(m_receive_handler_mutex);
+    m_receive_handlers.erase(shm_name);
+}
+
+ReceiveHandler ShmManager::findReceiverHandler(const std::string& shm_name)
+{
+    std::lock_guard<std::mutex> lock(m_receive_handler_mutex);
+    auto it = m_receive_handlers.find(shm_name);
+    if (it == m_receive_handlers.end())
+        return nullptr;
+    return it->second;
+}
 
 ShmManager::ShmManager()
     : MessageThread(8192, "ShmManager"),
@@ -123,7 +146,12 @@ void ShmManager::initParams(const std::string& shm_name)
 {
     m_shm_name = shm_name;
     for (uint32_t i = 0; i < Define::kShmNameCount; i++)
-        addPidNameInfo({Define::kShmNames[i], Define::INVALID_FD, static_cast<uint8_t>(i)});
+    {
+        PidNameInfo info;
+        info.m_shm_name = Define::kProcesses[i].m_shm_name;
+        info.addReceiver(static_cast<uint8_t>(i), 0);
+        addPidNameInfo(info);
+    }
 }
 
 ShmManager* ShmManager::getInstance()
@@ -149,6 +177,23 @@ void ShmManager::addPidNameInfo(PidNameInfo info)
 void ShmManager::OnThreadInit()
 {
     initShm(m_shm_name == Define::Daemon);
+    m_heartbeat_timer_fd = startTimer(1000, true, std::bind(&ShmManager::OnTimer, this, std::placeholders::_1));
+}
+
+void ShmManager::OnTimer(int timer_fd)
+{
+    if (timer_fd == m_heartbeat_timer_fd)
+    {
+        handleHeartbeatTimer();
+    }
+}
+
+void ShmManager::handleHeartbeatTimer()
+{
+    if (m_shm_name == Define::Daemon)
+        checkHeartbeatTimeout();
+    else
+        sendHeartbeat();
 }
 
 void ShmManager::initShm(bool create)
@@ -169,31 +214,30 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create)
     if (it == shms->end() || !it->second)
         return;
     auto shm = it->second;
-    if (shm->valid())
+    if (!shm->valid())
     {
-        if (info.m_shm_name == m_shm_name)
-            initReceiveWork();
-        tryStartFixedProcesses();
-        return;
-    }
-    if (shm->Open(create))
-    {
-        LOG_DEBUG("ShmManager: openStreamShmRetry success, name=%s, sender_logic=%u, receiver_logic=%u",
-            info.m_shm_name.c_str(), info.m_sender_logic, info.m_receiver_logic);
-        if (info.m_shm_name == m_shm_name)
-            initReceiveWork();
-        tryStartFixedProcesses();
-    }
-    else
-    {
-        LOG_ERROR("ShmManager: openStreamShmRetry failed, name=%s, sender_logic=%u, receiver_logic=%u",
-            info.m_shm_name.c_str(), info.m_sender_logic, info.m_receiver_logic);
-        shm->Close();
-        postTimer(1000, [this, info = std::move(info), create](int) mutable
+        if (!shm->Open(create))
         {
-            openStreamShmRetry(std::move(info), create);
-        });
+            LOG_ERROR("ShmManager: openStreamShmRetry failed, name=%s, senders=%zu, receivers=%zu",
+                info.m_shm_name.c_str(), info.m_senders.size(), info.m_receivers.size());
+            shm->Close();
+            postTimer(1000, [this, info = std::move(info), create](int) mutable
+            {
+                openStreamShmRetry(std::move(info), create);
+            });
+            return;
+        }
+        LOG_DEBUG("ShmManager: openStreamShmRetry success, name=%s, senders=%zu, receivers=%zu",
+            info.m_shm_name.c_str(), info.m_senders.size(), info.m_receivers.size());
     }
+    if (info.m_shm_name == m_shm_name)
+    {
+        if ((shm->get_reader_flag() & 1u) == 0)
+            shm->alloc_reader_slot();
+        shm->set_reader_index(0);
+        initReceiveWork();
+    }
+    tryStartFixedProcesses();
 }
 
 void ShmManager::tryStartFixedProcesses()
@@ -207,7 +251,7 @@ void ShmManager::tryStartFixedProcesses()
     {
         if (i == Define::Daemon_Fd)
             continue;
-        auto it = shms->find(Define::kShmNames[i]);
+        auto it = shms->find(Define::kProcesses[i].m_shm_name);
         if (it == shms->end() || !it->second || !it->second->valid())
             return;
     }
@@ -216,7 +260,7 @@ void ShmManager::tryStartFixedProcesses()
     {
         if (i == Define::Daemon_Fd)
             continue;
-        m_start_process_callback(Define::kShmNames[i], static_cast<uint8_t>(i));
+        m_start_process_callback(Define::kProcesses[i].m_shm_name, static_cast<uint8_t>(i));
     }
 }
 
@@ -295,153 +339,26 @@ void ShmManager::onReceiveMessage(std::shared_ptr<TagReceiveMessage> tag)
 
 void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag)
 {
-    if (tag->m_data.size() < 2)
+    if (!tag || tag->m_data.size() < 2)
     {
-        LOG_ERROR("ShmManager: daemon message truncated, size=%zu", tag->m_data.size());
+        LOG_ERROR("ShmManager: daemon message truncated, size=%zu", tag ? tag->m_data.size() : 0);
         return;
     }
     uint16_t sub_message_id = Standard::Small_U8ToU16(tag->m_data.data());
     switch (sub_message_id)
     {
         case Define::MESSAGE_SUB_ID_ALLOCATE_SHM:
-        {
-            if (!tag || tag->m_data.size() < 13)
-            {
-                LOG_ERROR("ShmManager: ALLOCATE_SHM truncated, size=%zu", tag ? tag->m_data.size() : 0);
-                break;
-            }
-            uint8_t shm_name_len = tag->m_data[12];
-            if (tag->m_data.size() < 13u + shm_name_len)
-            {
-                LOG_ERROR("ShmManager: ALLOCATE_SHM name truncated");
-                break;
-            }
-            // 解析数据部分，从第3个字节开始
-            uint8_t sender_logic = tag->m_data[2];
-            uint8_t receiver_logic = tag->m_data[3];
-            uint32_t slot_size = Standard::Small_U8ToU32(tag->m_data.data() + 4);
-            uint32_t slot_count = Standard::Small_U8ToU32(tag->m_data.data() + 8);
-            const std::string shm_name = std::string(
-                reinterpret_cast<const char*>(tag->m_data.data() + 13),
-                static_cast<size_t>(shm_name_len));
-
-            std::string receiver_shm_name = lookupShmNameByLogicId(receiver_logic);
-            std::string sender_shm_name = lookupShmNameByLogicId(sender_logic);
-            auto send_tag = makeSendMessage(std::move(tag->m_data), tag->m_message_id);
-            PidNameInfo info{shm_name, sender_logic, receiver_logic};
-            auto it_exist = std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),
-                [&info](const PidNameInfo& item)
-                {
-                    return item.m_shm_name == info.m_shm_name;
-                });
-            if (it_exist != m_pidNameInfos.end())
-            {
-                send(send_tag, receiver_shm_name);
-                send(send_tag, sender_shm_name);
-                
-                // 这里如果申请的发送者逻辑进程id不等于现有的id直接认为是多发送者，进行赋值
-                if (sender_logic != it_exist->m_sender_logic)
-                    it_exist->m_sender_logic = Define::INVALID_FD;
-                LOG_DEBUG("ShmManager: handleDaemonMessage AllocateShm idempotent, "
-                    "shm_name = %s, receiver_shm_name = %s, sender_shm_name = %s",
-                    shm_name.c_str(), receiver_shm_name.c_str(), sender_shm_name.c_str());
-                break;
-            }
-            m_pidNameInfos.push_back(info);
-            addShmInfo(shm_name, std::make_shared<StreamShmCreator>(shm_name, slot_size, slot_count));
-            openStreamShmRetry(info, true);
-
-            // 响应业务进程请求，将消息发送给接收者进程和发送者进程
-            send(send_tag, receiver_shm_name);
-            send(send_tag, sender_shm_name);
-            LOG_DEBUG("ShmManager: handleDaemonMessage AllocateShm success, "
-                "shm_name = %s, receiver_shm_name = %s, sender_shm_name = %s",
-                shm_name.c_str(), receiver_shm_name.c_str(), sender_shm_name.c_str());
-        }
-        break;
+            handleDaemon_AllocateShm(*tag);
+            break;
         case Define::MESSAGE_SUB_ID_RELEASE_SHM:
-        {
-            if (!tag || tag->m_data.size() < 3)
-            {
-                LOG_ERROR("ShmManager: RELEASE_SHM truncated, size=%zu", tag ? tag->m_data.size() : 0);
-                break;
-            }
-            uint8_t shm_name_len = tag->m_data[2];
-            if (tag->m_data.size() < 5u + shm_name_len)
-            {
-                LOG_ERROR("ShmManager: RELEASE_SHM truncated, size=%zu", tag->m_data.size());
-                break;
-            }
-            // 解析数据部分，从第3个字节开始
-            const std::string shm_name = std::string(
-                reinterpret_cast<const char*>(tag->m_data.data() + 3),
-                static_cast<size_t>(shm_name_len));
-            uint8_t logic_id = tag->m_data[3 + shm_name_len];
-            uint8_t force = tag->m_data[4 + shm_name_len];
-            if (logic_id >= Define::INVALID_FD)
-            {
-                LOG_ERROR("ShmManager: RELEASE_SHM logic_id is invalid, logic_id = %u", logic_id);
-                break;
-            }
-            auto send_tag = makeSendMessage(std::move(tag->m_data), tag->m_message_id);
-
-            // 找到对应的共享内存名称的pidInfo信息
-            auto it_pid = std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),
-                [&shm_name](const PidNameInfo& item)
-                {
-                    return item.m_shm_name == shm_name;
-                });
-            if (it_pid == m_pidNameInfos.end())
-                return;
-
-            // 普通发送者只通知其关闭本地映射，不拆通道
-            if (force != RELEASE_SHM_FORCE && logic_id != it_pid->m_receiver_logic)
-            {
-                send(send_tag, lookupShmNameByLogicId(logic_id));
-                LOG_DEBUG("ShmManager: handleDaemonMessage ReleaseShm sender leave, shm_name = %s, logic_id = %u",
-                    shm_name.c_str(), logic_id);
-                break;
-            }
-
-            // 强制释放或接收者释放：停接收、解链并通知相关进程
-            if (auto work = removeReceiveWork(shm_name))
-                work->stop();
-
-            if (auto shm = removeShmInfo(shm_name))
-                releaseShm(std::move(shm));
-
-            if (it_pid->m_sender_logic == Define::INVALID_FD)
-            {
-                for (uint32_t i = 0; i < Define::kShmNameCount; i++)
-                {
-                    if (Define::kShmNames[i] == Define::Daemon)
-                        continue;
-                    send(send_tag, Define::kShmNames[i]);
-                }
-            }
-            else
-            {
-                send(send_tag, lookupShmNameByLogicId(it_pid->m_sender_logic));
-                send(send_tag, lookupShmNameByLogicId(it_pid->m_receiver_logic));
-            }
-            m_pidNameInfos.erase(it_pid);
-            LOG_DEBUG("ShmManager: handleDaemonMessage ReleaseShm success, shm_name = %s, force = %u",
-                shm_name.c_str(), force);
-        }
-        break;
+            handleDaemon_ReleaseShm(*tag);
+            break;
         case Define::MESSAGE_SUB_ID_SET_SYNC_FLAG:
-        {
-            if (!tag || tag->m_data.size() < 4)
-            {
-                LOG_ERROR("ShmManager: SET_SYNC_FLAG truncated, size=%zu", tag ? tag->m_data.size() : 0);
-                break;
-            }
-            uint8_t logic_id = tag->m_data[2];
-            uint8_t flag = tag->m_data[3];
-            if (m_sync_flag_callback)
-                m_sync_flag_callback(logic_id, flag);
-        }
-        break;
+            handleDaemon_SetSyncFlag(*tag);
+            break;
+        case Define::MESSAGE_SUB_ID_HEARTBEAT:
+            handleDaemon_Heartbeat(*tag);
+            break;
         default:
             break;
     }
@@ -449,98 +366,233 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag)
 
 void ShmManager::handleProcessMessage(std::shared_ptr<TagReceiveMessage> tag)
 {
-    if (tag->m_data.size() < 2)
+    if (!tag || tag->m_data.size() < 2)
     {
-        LOG_ERROR("ShmManager: process message truncated, size=%zu", tag->m_data.size());
+        LOG_ERROR("ShmManager: process message truncated, size=%zu", tag ? tag->m_data.size() : 0);
         return;
     }
     uint16_t sub_message_id = Standard::Small_U8ToU16(tag->m_data.data());
     switch (sub_message_id)
     {
         case Define::MESSAGE_SUB_ID_ALLOCATE_SHM:
-        {
-            if (!tag || tag->m_data.size() < 13)
-            {
-                LOG_ERROR("ShmManager: ALLOCATE_SHM truncated, size=%zu", tag ? tag->m_data.size() : 0);
-                break;
-            }
-            uint8_t shm_name_len = tag->m_data[12];
-            if (tag->m_data.size() < 13u + shm_name_len)
-            {
-                LOG_ERROR("ShmManager: ALLOCATE_SHM name truncated");
-                break;
-            }
-            // 解析数据部分，从第3个字节开始
-            uint8_t sender_logic = tag->m_data[2];
-            uint8_t receiver_logic = tag->m_data[3];
-            uint32_t slot_size = Standard::Small_U8ToU32(tag->m_data.data() + 4);
-            uint32_t slot_count = Standard::Small_U8ToU32(tag->m_data.data() + 8);
-            const std::string shm_name = std::string(
-                reinterpret_cast<const char*>(tag->m_data.data() + 13),
-                static_cast<size_t>(shm_name_len));
-
-            PidNameInfo info{shm_name, sender_logic, receiver_logic};
-            auto it_exist = std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),
-                [&info](const PidNameInfo& item)
-                {
-                    return item.m_shm_name == info.m_shm_name;
-                });
-            if (it_exist == m_pidNameInfos.end())
-                m_pidNameInfos.push_back(info);
-            else
-                return;
-            addShmInfo(shm_name, std::make_shared<StreamShmCreator>(shm_name, slot_size, slot_count));
-            openStreamShmRetry(info, false);
-        }
-        break;
+            handleProcess_AllocateShm(*tag);
+            break;
         case Define::MESSAGE_SUB_ID_RELEASE_SHM:
-        {
-            if (!tag || tag->m_data.size() < 3)
-            {
-                LOG_ERROR("ShmManager: RELEASE_SHM truncated, size=%zu", tag ? tag->m_data.size() : 0);
-                break;
-            }
-            uint8_t shm_name_len = tag->m_data[2];
-            if (tag->m_data.size() < 3u + shm_name_len)
-            {
-                LOG_ERROR("ShmManager: RELEASE_SHM truncated, size=%zu", tag->m_data.size());
-                break;
-            }
-            // 解析数据部分，从第3个字节开始
-            const std::string shm_name = std::string(
-                reinterpret_cast<const char*>(tag->m_data.data() + 3),
-                static_cast<size_t>(shm_name_len));
-
-            // 找到对应的共享内存名称的pidInfo信息
-            auto it_pid = std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),
-                [&shm_name](const PidNameInfo& item)
-                {
-                    return item.m_shm_name == shm_name;
-                });
-            if (it_pid == m_pidNameInfos.end() || getLogicProcessId(shm_name) != Define::INVALID_FD)
-                return;
-            m_pidNameInfos.erase(it_pid);
-
-            // 找到对应的接收消息线程
-            if (auto work = removeReceiveWork(shm_name))
-                work->stop();
-
-            // 找到对应的共享内存的句柄
-            if (auto shm = removeShmInfo(shm_name))
-                releaseShm(std::move(shm));
-            LOG_DEBUG("ShmManager: handleProcessMessage ReleaseShm success, shm_name = %s", shm_name.c_str());
-        }
-        break;
+            handleProcess_ReleaseShm(*tag);
+            break;
         default:
             break;
     }
+}
+
+void ShmManager::handleDaemon_AllocateShm(TagReceiveMessage& tag)
+{
+    AllocateShmPayload p;
+    if (!parseAllocateShm(tag.m_data, p))
+        return;
+
+    auto send_tag = makeSendMessage(std::move(tag.m_data), tag.m_message_id);
+    std::string reply_shm_name = lookupShmNameByLogicId(p.m_logic_id);
+    auto it_exist = findPidNameInfo(p.m_shm_name);
+    if (it_exist == m_pidNameInfos.end())
+    {
+        PidNameInfo info;
+        info.m_shm_name = p.m_shm_name;
+        m_pidNameInfos.push_back(info);
+        it_exist = findPidNameInfo(p.m_shm_name);
+        addShmInfo(p.m_shm_name, std::make_shared<StreamShmCreator>(p.m_shm_name, p.m_slot_size, p.m_slot_count));
+        openStreamShmRetry(*it_exist, true);
+    }
+
+    if (p.m_role == ALLOCATE_SHM_RECEIVER)
+    {
+        uint8_t reader_index = it_exist->readerIndexOf(p.m_logic_id);
+        if (reader_index >= MAX_READER_COUNT)
+        {
+            std::shared_ptr<StreamShmCreator> shm;
+            if (auto shms = shmInfos())
+            {
+                auto it_shm = shms->find(p.m_shm_name);
+                if (it_shm != shms->end())
+                    shm = it_shm->second;
+            }
+            reader_index = shm ? shm->alloc_reader_slot() : INVALID_READER_INDEX;
+            if (reader_index == INVALID_READER_INDEX)
+            {
+                LOG_ERROR("ShmManager: AllocateShm no reader slot, shm_name = %s", p.m_shm_name.c_str());
+                return;
+            }
+            it_exist->addAllocateRole(p.m_logic_id, p.m_role, reader_index);
+        }
+        send_tag->m_data.push_back(reader_index);
+    }
+    else
+        it_exist->addAllocateRole(p.m_logic_id, p.m_role);
+
+    if (!reply_shm_name.empty())
+        send(send_tag, reply_shm_name);
+    LOG_DEBUG("ShmManager: handleDaemonMessage AllocateShm, shm_name = %s, logic_id = %u, role = %u",
+        p.m_shm_name.c_str(), p.m_logic_id, p.m_role);
+}
+
+void ShmManager::handleDaemon_ReleaseShm(TagReceiveMessage& tag)
+{
+    ReleaseShmPayload p;
+    if (!parseReleaseShm(tag.m_data, p))
+        return;
+    auto send_tag = makeSendMessage(std::move(tag.m_data), tag.m_message_id);
+
+    auto it_pid = findPidNameInfo(p.m_shm_name);
+    if (it_pid == m_pidNameInfos.end())
+        return;
+
+    uint8_t reader_index = it_pid->readerIndexOf(p.m_logic_id);
+    it_pid->remove(p.m_logic_id);
+    if (reader_index < MAX_READER_COUNT)
+    {
+        if (auto shms = shmInfos())
+        {
+            auto it_shm = shms->find(p.m_shm_name);
+            if (it_shm != shms->end() && it_shm->second)
+                it_shm->second->free_reader_slot(reader_index);
+        }
+    }
+    send(send_tag, lookupShmNameByLogicId(p.m_logic_id));
+    if (p.m_force != RELEASE_SHM_FORCE && !it_pid->empty())
+    {
+        LOG_DEBUG("ShmManager: handleDaemonMessage ReleaseShm leave, shm_name = %s, logic_id = %u",
+            p.m_shm_name.c_str(), p.m_logic_id);
+        return;
+    }
+
+    if (auto work = removeReceiveWork(p.m_shm_name))
+        work->stop();
+    if (auto shm = removeShmInfo(p.m_shm_name))
+        releaseShm(std::move(shm));
+    for (uint8_t id : it_pid->m_senders)
+        send(send_tag, lookupShmNameByLogicId(id));
+    for (uint8_t id : it_pid->m_receivers)
+        send(send_tag, lookupShmNameByLogicId(id));
+    m_pidNameInfos.erase(it_pid);
+    LOG_DEBUG("ShmManager: handleDaemonMessage ReleaseShm success, shm_name = %s, force = %u",
+        p.m_shm_name.c_str(), p.m_force);
+}
+
+void ShmManager::handleDaemon_SetSyncFlag(TagReceiveMessage& tag)
+{
+    if (tag.m_data.size() < 4)
+    {
+        LOG_ERROR("ShmManager: SET_SYNC_FLAG truncated, size=%zu", tag.m_data.size());
+        return;
+    }
+    uint8_t logic_id = tag.m_data[2];
+    uint8_t flag = tag.m_data[3];
+    if (m_sync_flag_callback)
+        m_sync_flag_callback(logic_id, flag);
+}
+
+void ShmManager::handleDaemon_Heartbeat(TagReceiveMessage& tag)
+{
+    if (tag.m_data.size() < 3)
+        return;
+    uint8_t logic_id = tag.m_data[2];
+    if (logic_id == Define::Daemon_Fd || logic_id >= Define::kShmNameCount)
+        return;
+    m_heartbeat_remain[logic_id] = HEARTBEAT_TIMEOUT_SEC;
+}
+
+void ShmManager::sendHeartbeat()
+{
+    uint8_t logic_id = getLogicProcessId(m_shm_name);
+    if (logic_id >= Define::INVALID_FD)
+        return;
+    uint8_t buf[3];
+    uint8_t* p = buf;
+    Standard::Small_U16ToU8(Define::MESSAGE_SUB_ID_HEARTBEAT, p);
+    p += 2;
+    *p = logic_id;
+    auto send_msg = makeSendMessage(std::vector<uint8_t>(buf, buf + 3), Define::MESSAGE_ID_DAEMON);
+    send(send_msg, Define::Daemon);
+}
+
+void ShmManager::checkHeartbeatTimeout()
+{
+    for (uint8_t i = Define::Process1_Fd; i < Define::kShmNameCount; i++)
+    {
+        if (m_heartbeat_remain[i] == 0)
+            continue;
+        m_heartbeat_remain[i]--;
+        if (m_heartbeat_remain[i] == 0)
+        {
+            LOG_ERROR("ShmManager: heartbeat timeout, logic_id = %u", i);
+            handleProcessCrash(i);
+        }
+    }
+}
+
+void ShmManager::handleProcess_AllocateShm(TagReceiveMessage& tag)
+{
+    AllocateShmPayload p;
+    if (!parseAllocateShm(tag.m_data, p))
+        return;
+
+    auto it = findPidNameInfo(p.m_shm_name);
+    if (it == m_pidNameInfos.end())
+    {
+        PidNameInfo info;
+        info.m_shm_name = p.m_shm_name;
+        m_pidNameInfos.push_back(std::move(info));
+        it = findPidNameInfo(p.m_shm_name);
+    }
+    it->addAllocateRole(p.m_logic_id, p.m_role, p.m_reader_index);
+
+    std::shared_ptr<StreamShmCreator> shm;
+    if (auto shms = shmInfos())
+    {
+        auto found = shms->find(p.m_shm_name);
+        if (found != shms->end())
+            shm = found->second;
+    }
+    if (!shm)
+    {
+        shm = std::make_shared<StreamShmCreator>(p.m_shm_name, p.m_slot_size, p.m_slot_count);
+        addShmInfo(p.m_shm_name, shm);
+        openStreamShmRetry(*it, false);
+    }
+
+    if (p.m_role != ALLOCATE_SHM_RECEIVER || !shm || p.m_reader_index >= MAX_READER_COUNT)
+        return;
+    shm->set_reader_index(p.m_reader_index);
+    ReceiveHandler handler = findReceiverHandler(p.m_shm_name);
+    if (handler)
+        createReceiveWork(p.m_shm_name, std::move(handler));
+}
+
+void ShmManager::handleProcess_ReleaseShm(TagReceiveMessage& tag)
+{
+    ReleaseShmPayload p;
+    if (!parseReleaseShm(tag.m_data, p))
+        return;
+
+    auto it_pid = findPidNameInfo(p.m_shm_name);
+    if (it_pid == m_pidNameInfos.end() || getLogicProcessId(p.m_shm_name) != Define::INVALID_FD)
+        return;
+    m_pidNameInfos.erase(it_pid);
+    removeReceiverHandler(p.m_shm_name);
+
+    if (auto work = removeReceiveWork(p.m_shm_name))
+        work->stop();
+    if (auto shm = removeShmInfo(p.m_shm_name))
+        releaseShm(std::move(shm));
+    LOG_DEBUG("ShmManager: handleProcessMessage ReleaseShm success, shm_name = %s", p.m_shm_name.c_str());
 }
 
 void ShmManager::releaseShm(std::shared_ptr<StreamShmCreator> shm)
 {
     if (!shm)
         return;
-    shm->set_flag(0);
+    if (m_shm_name == Define::Daemon)
+        shm->set_flag(0);
     if (shm->get_sending_count() > 0)
     {
         postTimer(1000, [this, shm](int)
@@ -549,20 +601,23 @@ void ShmManager::releaseShm(std::shared_ptr<StreamShmCreator> shm)
         });
         return;
     }
+    
     if (m_shm_name == Define::Daemon)
         shm->delete_shm();
     else
         shm->Close();
 }
 
-bool ShmManager::RequestAllocateShm(uint8_t sender_logic, uint8_t receiver_logic,
-    uint32_t slot_size, uint32_t slot_count, const std::string& new_shm_name)
+bool ShmManager::RequestAllocateShm(uint8_t role, uint32_t slot_size, uint32_t slot_count,
+    const std::string& new_shm_name, ReceiveHandler handler)
 {
-    if (receiver_logic >= Define::INVALID_FD
-        || sender_logic > Define::INVALID_FD)
+    uint8_t logic_id = getLogicProcessId(m_shm_name);
+    if (logic_id >= Define::INVALID_FD
+        || (role != ALLOCATE_SHM_SENDER && role != ALLOCATE_SHM_RECEIVER)
+        || (role == ALLOCATE_SHM_RECEIVER && !handler))
     {
-        LOG_ERROR("ShmManager: RequestAllocateShm failed, sender_logic = %u, receiver_logic = %u",
-            sender_logic, receiver_logic);
+        LOG_ERROR("ShmManager: RequestAllocateShm failed, logic_id = %u, role = %u",
+            logic_id, role);
         return false;
     }
     auto shms = shmInfos();
@@ -572,7 +627,6 @@ bool ShmManager::RequestAllocateShm(uint8_t sender_logic, uint8_t receiver_logic
         return false;
     }
 
-    // 开始组建向守护进程申请分配共享内存的消息
     std::shared_ptr<TagSendMessage> send_msg = std::make_shared<TagSendMessage>();
     uint8_t payload_data[512] = {0};
     uint8_t* pCur = payload_data;
@@ -582,12 +636,12 @@ bool ShmManager::RequestAllocateShm(uint8_t sender_logic, uint8_t receiver_logic
     Standard::Small_U16ToU8(Define::MESSAGE_SUB_ID_ALLOCATE_SHM, pCur);
     pCur += 2;
 
-    // 发送者逻辑进程id
-    *pCur = sender_logic;
+    // 逻辑进程id
+    *pCur = logic_id;
     pCur++;
 
-    // 接收者逻辑进程id
-    *pCur = receiver_logic;
+    // 角色
+    *pCur = role;
     pCur++;
 
     // 单槽位大小
@@ -608,11 +662,14 @@ bool ShmManager::RequestAllocateShm(uint8_t sender_logic, uint8_t receiver_logic
 
     send_msg->m_data.assign(payload_data, pCur);
 
-    // 发送消息
+    if (role == ALLOCATE_SHM_RECEIVER)
+        setReceiverHandler(new_shm_name, std::move(handler));
     bool ret = send(send_msg, Define::Daemon);
-    LOG_DEBUG("ShmManager: RequestAllocateShm, sender_logic = %u, receiver_logic = %u, "
+    if (!ret && role == ALLOCATE_SHM_RECEIVER)
+        removeReceiverHandler(new_shm_name);
+    LOG_DEBUG("ShmManager: RequestAllocateShm, logic_id = %u, role = %u, "
         "slot_size = %d, slot_count = %d, new_shm_name = %s, ret = %d",
-        sender_logic, receiver_logic, slot_size, slot_count, new_shm_name.c_str(), ret);
+        logic_id, role, slot_size, slot_count, new_shm_name.c_str(), ret);
     return ret;
 }
 
@@ -662,59 +719,42 @@ void ShmManager::handleProcessCrash(uint8_t logic_id)
 {
     if (logic_id == Define::INVALID_FD)
         return;
-    // 只处理接收者崩溃。多发送者通道上单个发送者退出不释放，其他发送者继续用。
+    if (logic_id < Define::kShmNameCount)
+        m_heartbeat_remain[logic_id] = 0;
     for (size_t i = 0; i < m_pidNameInfos.size();)
     {
-        if (m_pidNameInfos[i].m_receiver_logic == logic_id)
+        PidNameInfo& info = m_pidNameInfos[i];
+        if (!info.hasSender(logic_id) && !info.hasReceiver(logic_id))
         {
-            uint8_t logic_process_id = getLogicProcessId(m_pidNameInfos[i].m_shm_name);
-            auto shms = shmInfos();
-            std::shared_ptr<StreamShmCreator> shm;
-            if (shms)
-            {
-                auto it_shm = shms->find(m_pidNameInfos[i].m_shm_name);
-                if (it_shm != shms->end())
-                    shm = it_shm->second;
-            }
-            if (shm)
-            {
-                if (logic_process_id != Define::INVALID_FD)
-                {
-                    // 固定通道：禁止收发，等待进程拉起后恢复
-                    // 环内数据刻意保留，进程重新拉起后可恢复继续消费
-                    shm->set_flag(0);
-                    LOG_INFO("ShmManager: handleProcessCrash success, shm_name = %s, logic_id = %u",
-                        m_pidNameInfos[i].m_shm_name.c_str(), logic_id);
-                    i++;
-                }
-                else
-                {
-                    // 动态通道：走 RELEASE 解链 SHM 并通知对端；业务进程重启后须重新 RequestAllocateShm
-                    // 组建消息直接调用handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag)处理释放共享内存
-                    const std::string& name = m_pidNameInfos[i].m_shm_name;
-                    auto release_msg = std::make_shared<TagReceiveMessage>();
-                    release_msg->m_message_id = Define::MESSAGE_ID_DAEMON;
-                    uint8_t buf[512];
-                    uint8_t* p = buf;
-                    Standard::Small_U16ToU8(Define::MESSAGE_SUB_ID_RELEASE_SHM, p);
-                    p += 2;
-                    *p++ = static_cast<uint8_t>(name.size());
-                    memcpy(p, name.data(), name.size());
-                    p += name.size();
-                    *p++ = logic_id;
-                    *p++ = RELEASE_SHM_FORCE;
-                    release_msg->m_data.assign(buf, p);
-                    handleDaemonMessage(release_msg);
-                    // 判断是否已经删除
-                    if (i < m_pidNameInfos.size() && name == m_pidNameInfos[i].m_shm_name)
-                        i++;
-                }
-            }
-            else
-                i++;
-        }
-        else
             i++;
+            continue;
+        }
+        std::shared_ptr<StreamShmCreator> shm;
+        if (auto shms = shmInfos())
+        {
+            auto it_shm = shms->find(info.m_shm_name);
+            if (it_shm != shms->end())
+                shm = it_shm->second;
+        }
+        uint8_t reader_index = info.readerIndexOf(logic_id);
+        if (shm && reader_index < MAX_READER_COUNT)
+            shm->drop_reader(reader_index);
+        info.remove(logic_id);
+        if (!info.empty())
+        {
+            LOG_DEBUG("ShmManager: handleProcessCrash leave, shm_name = %s, logic_id = %u",
+                info.m_shm_name.c_str(), logic_id);
+            i++;
+            continue;
+        }
+        const std::string name = info.m_shm_name;
+        if (auto work = removeReceiveWork(name))
+            work->stop();
+        if (auto gone = removeShmInfo(name))
+            releaseShm(std::move(gone));
+        m_pidNameInfos.erase(m_pidNameInfos.begin() + static_cast<std::ptrdiff_t>(i));
+        LOG_INFO("ShmManager: handleProcessCrash teardown, shm_name = %s, logic_id = %u",
+            name.c_str(), logic_id);
     }
 }
 
@@ -722,14 +762,78 @@ std::string ShmManager::lookupShmNameByLogicId(uint8_t logic_id) const
 {
     if (logic_id >= Define::kShmNameCount)
         return "";
-    return Define::kShmNames[logic_id];
+    return Define::kProcesses[logic_id].m_shm_name;
+}
+
+std::vector<PidNameInfo>::iterator ShmManager::findPidNameInfo(const std::string& shm_name)
+{
+    return std::find_if(m_pidNameInfos.begin(), m_pidNameInfos.end(),
+        [&shm_name](const PidNameInfo& item)
+        {
+            return item.m_shm_name == shm_name;
+        });
+}
+
+bool ShmManager::parseAllocateShm(const std::vector<uint8_t>& data, AllocateShmPayload& out)
+{
+    if (data.size() < 13)
+    {
+        LOG_ERROR("ShmManager: ALLOCATE_SHM truncated, size=%zu", data.size());
+        return false;
+    }
+    uint8_t shm_name_len = data[12];
+    if (data.size() < 13u + shm_name_len)
+    {
+        LOG_ERROR("ShmManager: ALLOCATE_SHM name truncated");
+        return false;
+    }
+    out.m_logic_id = data[2];
+    out.m_role = data[3];
+    out.m_slot_size = Standard::Small_U8ToU32(data.data() + 4);
+    out.m_slot_count = Standard::Small_U8ToU32(data.data() + 8);
+    out.m_shm_name.assign(reinterpret_cast<const char*>(data.data() + 13), shm_name_len);
+    out.m_reader_index = INVALID_READER_INDEX;
+    if (out.m_role == ALLOCATE_SHM_RECEIVER && data.size() > 13u + shm_name_len)
+        out.m_reader_index = data[13u + shm_name_len];
+    if (out.m_logic_id >= Define::INVALID_FD
+        || (out.m_role != ALLOCATE_SHM_SENDER && out.m_role != ALLOCATE_SHM_RECEIVER))
+    {
+        LOG_ERROR("ShmManager: ALLOCATE_SHM invalid, logic_id = %u, role = %u",
+            out.m_logic_id, out.m_role);
+        return false;
+    }
+    return true;
+}
+
+bool ShmManager::parseReleaseShm(const std::vector<uint8_t>& data, ReleaseShmPayload& out)
+{
+    if (data.size() < 3)
+    {
+        LOG_ERROR("ShmManager: RELEASE_SHM truncated, size=%zu", data.size());
+        return false;
+    }
+    uint8_t shm_name_len = data[2];
+    if (data.size() < 5u + shm_name_len)
+    {
+        LOG_ERROR("ShmManager: RELEASE_SHM truncated, size=%zu", data.size());
+        return false;
+    }
+    out.m_shm_name.assign(reinterpret_cast<const char*>(data.data() + 3), shm_name_len);
+    out.m_logic_id = data[3 + shm_name_len];
+    out.m_force = data[4 + shm_name_len];
+    if (out.m_logic_id >= Define::INVALID_FD)
+    {
+        LOG_ERROR("ShmManager: RELEASE_SHM logic_id is invalid, logic_id = %u", out.m_logic_id);
+        return false;
+    }
+    return true;
 }
 
 uint8_t ShmManager::getLogicProcessId(const std::string& shm_name)
 {
     for (uint32_t i = 0; i < Define::kShmNameCount; i++)
     {
-        if (shm_name == Define::kShmNames[i])
+        if (shm_name == Define::kProcesses[i].m_shm_name)
             return static_cast<uint8_t>(i);
     }
     return Define::INVALID_FD;

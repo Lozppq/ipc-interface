@@ -40,12 +40,12 @@ void ProcessManager::postCreateProcess(std::string shm_name)
     post([this, shm_name = std::move(shm_name)]()
     {
         const uint8_t logic_id = getLogicProcessId(shm_name);
-        if (logic_id >= Define::kProcessExecutableNameCount)
+        if (logic_id >= Define::kShmNameCount)
         {
             LOG_ERROR("ProcessManager: postCreateProcess invalid shm_name: %s", shm_name.c_str());
             return;
         }
-        createProcess(shm_name, Define::kProcessExecutableNames[logic_id]);
+        createProcess(shm_name, Define::kProcesses[logic_id].m_executable);
     });
 }
 
@@ -97,7 +97,7 @@ bool ProcessManager::isAllowCreateProcess(const std::string& shm_name)
     uint32_t fd = Define::INVALID_FD;
     for (uint32_t i = 0; i < Define::kShmNameCount; i++)
     {
-        if (shm_name == Define::kShmNames[i])
+        if (shm_name == Define::kProcesses[i].m_shm_name)
         {
             fd = i;
             break;
@@ -113,7 +113,7 @@ uint8_t ProcessManager::getLogicProcessId(const std::string& shm_name) const
 {
     for (uint32_t i = 0; i < Define::kShmNameCount; i++)
     {
-        if (shm_name == Define::kShmNames[i])
+        if (shm_name == Define::kProcesses[i].m_shm_name)
             return static_cast<uint8_t>(i);
     }
     return Define::INVALID_FD;
@@ -207,7 +207,7 @@ void ProcessManager::initProcessSyncShm()
         // 暂无全部按已同步处理；后续可按槽位 flags[Daemon_Fd/ProcessN_Fd] 分别置位
         // bootstrap 占位：上述循环非真实 per-slot 握手，仅为启动阶段允许 createProcess
         for (uint32_t i = 0; i < Define::kShmNameCount; i++)
-            process_sync_info->m_flags[i].store(Define::kProcessSyncFlagInitValues[i], std::memory_order_release);
+            process_sync_info->m_flags[i].store(Define::kProcesses[i].m_sync_flag, std::memory_order_release);
     }
     else
     {
