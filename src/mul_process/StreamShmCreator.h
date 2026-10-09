@@ -221,7 +221,7 @@ public:
      * @brief 构造函数
      * @param name 共享内存名称
      */
-    StreamShmCreator(const std::string& name, uint32_t slot_size = SIZE_256B, uint32_t slot_count = 1024);
+    StreamShmCreator(const std::string& name, uint32_t slot_size = SIZE_64B, uint32_t slot_count = 1024);
 
     /**
      * @brief 析构函数，自动调用 Close()
