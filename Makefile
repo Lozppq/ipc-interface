@@ -13,7 +13,7 @@
 #   build/bin/daemon               守护进程
 #   build/bin/process_1  process_2  process_3  udp_process  demo 进程
 
-CROSS_COMPILE ?= aarch64-ca53-linux-gnu-
+CROSS_COMPILE ?=
 CXX      := $(CROSS_COMPILE)g++
 
 BUILD_DIR := build

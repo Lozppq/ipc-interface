@@ -22,13 +22,16 @@ namespace MulProcess
 
 /**
  * @brief 支持的数据区大小（字节）
+ * SMALL 单位是字节，MEDIUM 单位是 KB，LARGE 单位是 MB
  */
 enum : uint32_t
 {
     SIZE_64B = 64,
     SIZE_256B = 256,
     SIZE_1KB = 1024,
+    SIZE_64KB = 64 * 1024,
     SIZE_256KB = 256 * 1024,
+    SIZE_1MB = 1024 * 1024,
 };
 
 // 不同级别槽位的超时时间限制，单位微妙，不能设置太小，避免高优先级线程调度问题
@@ -37,7 +40,9 @@ enum : uint32_t
     TIMEOUT_64B = 100000,
     TIMEOUT_256B = 110000,
     TIMEOUT_1KB = 120000,
+    TIMEOUT_64KB = 140000,
     TIMEOUT_256KB = 150000,
+    TIMEOUT_1MB = 180000,
 };
 
 // 这个代表最大分片的数量，目前分片id是uint8_t类型，所以最大分片数量为255
@@ -76,7 +81,23 @@ typedef struct
     std::atomic<uint8_t> m_slice_id;  // 切片id
     std::atomic<uint8_t> m_slice_count;  // 切片数量
     std::atomic<uint32_t> m_seq;  // 已提交序号，值为 produce_seq+1；0 表示未提交
+    uint8_t m_data[SIZE_64KB];
+}MEDIUM64DataSlot;
+
+typedef struct
+{
+    std::atomic<uint8_t> m_slice_id;  // 切片id
+    std::atomic<uint8_t> m_slice_count;  // 切片数量
+    std::atomic<uint32_t> m_seq;  // 已提交序号，值为 produce_seq+1；0 表示未提交
     uint8_t m_data[SIZE_256KB];
+}MEDIUM256DataSlot;
+
+typedef struct
+{
+    std::atomic<uint8_t> m_slice_id;  // 切片id
+    std::atomic<uint8_t> m_slice_count;  // 切片数量
+    std::atomic<uint32_t> m_seq;  // 已提交序号，值为 produce_seq+1；0 表示未提交
+    uint8_t m_data[SIZE_1MB];
 }LARGEDataSlot;
 
 /**
@@ -137,7 +158,45 @@ typedef struct
 } MEDIUMRingQueueHeader;
 
 /**
- * @brief 大数据环形队列结构体
+ * @brief 64KB 数据环形队列结构体
+**/
+typedef struct
+{
+#if defined(__linux__)
+    sem_t m_sem[MAX_READER_COUNT];           // 信号量，用于消费者阻塞等待
+#endif
+    std::atomic<uint32_t> m_reader_head[MAX_READER_COUNT]; // 各读者 consume 序号
+    std::atomic<uint32_t> m_tail;  // 队尾序号（单调递增，物理下标 = seq % slot_count）
+    std::atomic<uint32_t> m_slot_size; // 数据区大小
+    std::atomic<uint32_t> m_slot_count; // 数据区数量
+    std::atomic<uint32_t> m_flag; // 标志位
+    // bit0：1允许发送，0不允许发送
+    // bit1：1允许接收，0不允许接收
+    std::atomic<uint8_t> m_reader_flag; // 已分配的读者槽位 bitmask
+    MEDIUM64DataSlot m_data[0];  // 柔性数组成员，指向共享内存数据区
+} MEDIUM64RingQueueHeader;
+
+/**
+ * @brief 256KB 数据环形队列结构体
+**/
+typedef struct
+{
+#if defined(__linux__)
+    sem_t m_sem[MAX_READER_COUNT];           // 信号量，用于消费者阻塞等待
+#endif
+    std::atomic<uint32_t> m_reader_head[MAX_READER_COUNT]; // 各读者 consume 序号
+    std::atomic<uint32_t> m_tail;  // 队尾序号（单调递增，物理下标 = seq % slot_count）
+    std::atomic<uint32_t> m_slot_size; // 数据区大小
+    std::atomic<uint32_t> m_slot_count; // 数据区数量
+    std::atomic<uint32_t> m_flag; // 标志位
+    // bit0：1允许发送，0不允许发送
+    // bit1：1允许接收，0不允许接收
+    std::atomic<uint8_t> m_reader_flag; // 已分配的读者槽位 bitmask
+    MEDIUM256DataSlot m_data[0];  // 柔性数组成员，指向共享内存数据区
+} MEDIUM256RingQueueHeader;
+
+/**
+ * @brief 1MB 数据环形队列结构体
 **/
 typedef struct
 {

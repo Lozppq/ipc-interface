@@ -208,7 +208,7 @@ int main() {
 
 ```cpp
 #include "mul_process/ShmManager.h"
-#include "mul_process/StreamShmCreator.h"  // SIZE_64B / SIZE_256B / SIZE_1KB / SIZE_256KB
+#include "mul_process/StreamShmCreator.h"  // SIZE_64B / SIZE_256B / SIZE_1KB / SIZE_64KB / SIZE_256KB / SIZE_1MB
 #include "define/Common.h"
 
 auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
@@ -216,7 +216,7 @@ auto* mgr = IpcInterface::MulProcess::ShmManager::getInstance();
 // 参数含义：
 //   sender_logic    — 发送侧逻辑槽位（如 Process1_Fd）；多发送者传 INVALID_FD
 //   receiver_logic  — 接收侧逻辑槽位（如 Process2_Fd）
-//   slot_size       — 单槽字节数，必须是 SIZE_64B / SIZE_256B / SIZE_1KB / SIZE_256KB 之一
+//   slot_size       — 单槽字节数，必须是 SIZE_64B / SIZE_256B / SIZE_1KB / SIZE_64KB / SIZE_256KB / SIZE_1MB 之一
 //   slot_count      — 槽个数（如 1024）
 //   new_shm_name    — 新通道名，必须以 '/' 开头，且不在 kProcesses 固定表中
 //                     （如 "/ipc_dyn_p1_to_p2"）

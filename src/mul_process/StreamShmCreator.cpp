@@ -35,8 +35,14 @@ StreamShmCreator::StreamShmCreator(const std::string& name, uint32_t slot_size, 
         case SIZE_1KB:
             m_slot_timeout = TIMEOUT_1KB;
             break;
+        case SIZE_64KB:
+            m_slot_timeout = TIMEOUT_64KB;
+            break;
         case SIZE_256KB:
             m_slot_timeout = TIMEOUT_256KB;
+            break;
+        case SIZE_1MB:
+            m_slot_timeout = TIMEOUT_1MB;
             break;
         default:
             m_slot_timeout = TIMEOUT_256B;
@@ -197,7 +203,11 @@ int StreamShmCreator::send(std::shared_ptr<TagSendMessage> buf_msg)
             return send_impl(static_cast<SMALL256RingQueueHeader*>(m_shm_ptr), buf_msg);
         case SIZE_1KB:
             return send_impl(static_cast<MEDIUMRingQueueHeader*>(m_shm_ptr), buf_msg);
+        case SIZE_64KB:
+            return send_impl(static_cast<MEDIUM64RingQueueHeader*>(m_shm_ptr), buf_msg);
         case SIZE_256KB:
+            return send_impl(static_cast<MEDIUM256RingQueueHeader*>(m_shm_ptr), buf_msg);
+        case SIZE_1MB:
             return send_impl(static_cast<LARGERingQueueHeader*>(m_shm_ptr), buf_msg);
         default:
             return -1;
@@ -216,7 +226,11 @@ uint32_t StreamShmCreator::recv(std::shared_ptr<TagReceiveMessage> buf_msg)
             return recv_impl(static_cast<SMALL256RingQueueHeader*>(m_shm_ptr), buf_msg);
         case SIZE_1KB:
             return recv_impl(static_cast<MEDIUMRingQueueHeader*>(m_shm_ptr), buf_msg);
+        case SIZE_64KB:
+            return recv_impl(static_cast<MEDIUM64RingQueueHeader*>(m_shm_ptr), buf_msg);
         case SIZE_256KB:
+            return recv_impl(static_cast<MEDIUM256RingQueueHeader*>(m_shm_ptr), buf_msg);
+        case SIZE_1MB:
             return recv_impl(static_cast<LARGERingQueueHeader*>(m_shm_ptr), buf_msg);
         default:
             return 0;
