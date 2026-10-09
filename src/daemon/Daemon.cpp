@@ -23,6 +23,11 @@ int main(int argc, char* argv[])
         {
             IpcInterface::MulProcess::ProcessManager::getInstance()->setProcessSyncFlag(logic_id, flag);
         });
+    IpcInterface::MulProcess::ShmManager::getInstance()->setProcessOnlineCallback(
+        [](uint8_t logic_id, uint32_t os_pid)
+        {
+            IpcInterface::MulProcess::ProcessManager::getInstance()->postProcessOnline(logic_id, os_pid);
+        });
     IpcInterface::MulProcess::ProcessManager::getInstance()->setProcessStartedCallback(
         [](std::string shm_name)
         {

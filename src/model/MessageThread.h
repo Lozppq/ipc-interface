@@ -45,6 +45,8 @@ public:
     void postTimer(uint32_t delay_ms, TimerCallback callback);
     int startTimer(uint32_t interval_ms, bool periodic, TimerCallback callback);
     void stopTimer(int timer_fd);
+    bool addFd(int fd, FdCallback callback);
+    void removeFd(int fd);
     void stop() override;
 
 protected:

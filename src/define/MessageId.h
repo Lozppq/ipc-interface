@@ -38,9 +38,9 @@ enum : uint16_t
     // 数据部分：u8 逻辑进程id，u8 同步标志
     MESSAGE_SUB_ID_SET_SYNC_FLAG,
 
-    // 业务进程发给守护进程的心跳，
-    // 数据部分：u8 逻辑进程id
-    MESSAGE_SUB_ID_HEARTBEAT,
+    // 业务进程 inbox 打开后向 daemon 报到，
+    // 数据部分：u8 逻辑进程id，u32 真实 pid
+    MESSAGE_SUB_ID_PROCESS_ONLINE,
 };
 
 } // namespace Define

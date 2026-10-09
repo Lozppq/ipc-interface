@@ -6,12 +6,25 @@
 
 | 角色 | 槽位枚举 | 共享内存名 | 可执行文件 | 说明 |
 |------|----------|------------|------------|------|
-| Daemon | `Daemon_Fd` | `/ipc_daemon` | `daemon` | 创建各进程消息队列 shm，拉起子进程，`waitpid` 监控崩溃 |
+| Daemon | `Daemon_Fd` | `/ipc_daemon` | `daemon` | 创建各进程消息队列 shm；按 `m_boot` 决定是否 fork；`waitpid` / pidfd 盯崩溃 |
 | Process1 | `Process1_Fd` | `/ipc_process_1` | `process_1` | demo：周期性向 Process2 / Process3 发消息 |
 | Process2 | `Process2_Fd` | `/ipc_process_2` | `process_2` | demo：周期性向 Process1 / Process3 发消息 |
 | Process3 | `Process3_Fd` | `/ipc_process_3` | `process_3` | demo：周期性向 Process1 / Process2 发消息 |
 
-名称、可执行文件和同步初值定义在 `src/define/Common.h` 的 `kProcesses[]`（`m_shm_name`、`m_executable`、`m_sync_flag`），下标与 `Daemon_Fd` / `ProcessN_Fd` 对齐。
+槽位表在 `src/define/Common.h` 的 `kProcesses[]`，下标与 `Daemon_Fd` / `ProcessN_Fd` 对齐：
+
+```cpp
+{ m_shm_name, m_executable, m_boot, m_restart, m_sync_flag }
+```
+
+当前 demo 三进程是 **开机不拉、手动起来后报到，崩溃再由 daemon 接手**：
+
+```cpp
+{ "/ipc_daemon", "./daemon", true, false, PROCESS_SYNC_FLAG_DONE },
+{ "/ipc_process_1", "./process_1", false, true, PROCESS_SYNC_FLAG_DONE },
+{ "/ipc_process_2", "./process_2", false, true, PROCESS_SYNC_FLAG_DONE },
+{ "/ipc_process_3", "./process_3", false, true, PROCESS_SYNC_FLAG_DONE },
+```
 
 另有进程同步 shm：`/ipc_process_sync`（`ProcessSyncInfo`）。其中 `flags[槽位]` 表示该槽是否允许拉起；`ProcessManager` 用 shm 名解析槽位后读 `flags[fd]`。
 
@@ -28,7 +41,7 @@
 
 ## 编译
 
-依赖：g++（C++14）、pthread、librt。仅支持 Linux（依赖 `shm_open` / `fork` / `waitpid` 等）。
+依赖：g++（C++14）、pthread、librt。仅支持 Linux（`shm_open` / `fork` / `waitpid`）。外部进程报到还要 **`pidfd_open`（Linux ≥ 5.3）**；WSL1 没有该调用，会打 `Function not implemented`。
 
 ```bash
 cd ipc-interface
@@ -54,20 +67,52 @@ build/bin/process_3      # 随 demo/*.cpp 自动生成
 build/bin/udp_process    # 本机 UDP 对照，随 demo 一起生成
 ```
 
-## 运行 demo
+## 进程拉起（`kProcesses`）
 
-必须在**源码根目录**下进入产物目录再启动守护进程（`ProcessManager` 用相对路径 `./process_N` 拉起子进程，工作目录不对会找不到可执行文件）：
+任何 `fork` 都须 **`m_executable` 非空**（`nullptr` / `""` 都不拉起）。两个开关互相独立：
 
-```bash
-cd /path/to/ipc-interface   # 源码根目录
-make                        # 若尚未编译
-cd build/bin
-./daemon &
+| `m_boot` | `m_restart` | 命令 | 开机 | 崩溃 |
+|----------|-------------|------|------|------|
+| `true` | 忽略 | 非空 | daemon `fork/exec` | `waitpid` 后再拉 |
+| `false` | `true` | 非空 | 不拉，等业务自己起来 | 报到后用 pidfd 盯退出，再由 daemon fork |
+| `false` | `false` | 任意 | 不拉 | pidfd 只做 shm 清理，不 fork |
+| 任意 | 任意 | 空 | 不拉 | 不 fork |
+
+业务进程 **不用自己发报到**：`initParams` + `start()` 打开本进程 inbox 后，`ShmManager` 会自动发 `PROCESS_ONLINE`（逻辑槽位 + `getpid()`）。daemon 对 `m_boot == true` 的槽丢弃该消息（已有 `waitpid`）；对开机不拉的槽 `pidfd_open` + epoll 监视。
+
+`m_restart` 接手后的新进程是 daemon 子进程，之后崩溃改走 `waitpid`。
+
+把某槽改回开机由 daemon 拉起，例如：
+
+```cpp
+{ "/ipc_process_1", "./process_1", true, false, PROCESS_SYNC_FLAG_DONE },
 ```
 
-`./daemon &` 后台运行后，守护进程会创建固定环形 shm / 同步 shm，再按 `kProcesses[].m_executable` **自动拉起** `process_1`、`process_2`、`process_3` 等业务进程，无需再手动逐个启动。
+从不由 daemon fork：
+
+```cpp
+{ "/ipc_process_1", nullptr, false, false, PROCESS_SYNC_FLAG_DONE },
+```
+
+## 运行 demo
+
+必须在**源码根目录**下进入产物目录再启动（daemon 用相对路径 `./process_N` fork，工作目录不对会找不到文件）：
+
+```bash
+cd /path/to/ipc-interface
+make
+cd build/bin
+./daemon &
+./process_1 &
+./process_2 &
+./process_3 &
+```
+
+当前配置下 daemon **只建 shm、不 fork 业务进程**。三个 `process_N` 要自己起；起来后自动报到，崩溃则 daemon 按 `m_restart` 再拉。若改成 `m_boot == true`，只需 `./daemon &`，业务进程会被自动拉起。
 
 进程间通过各自固定 inbox 互发 `MESSAGE_ID_PROCESS`；日志中可看到收发与 `setReceiveHandler` 回调。
+
+若 `pidfd_open` 打 `Function not implemented`，说明内核 < 5.3 或 WSL1，外部报到路径不可用，请改用 `m_boot = true` 或换 WSL2 / 真 Linux。
 
 ## 性能
 
@@ -138,7 +183,7 @@ int main() {
 - `initParams(本进程队列名)`：非 daemon 会登记所有 `kProcesses`，便于打开发送目标队列
 - `setReceiveHandler`：须在 `start()` **之前**注册；回调只覆盖本进程**固定 inbox**上的 `MESSAGE_ID_PROCESS`
 - `send(tag, 目标 shm 名)`：在**调用线程**写入对端接收环；失败时最多重试 `kSendMaxRetry`（5）次并 `sched_yield`。业务互通用 `MESSAGE_ID_PROCESS`
-- daemon 协议（ALLOCATE / RELEASE / SET_SYNC_FLAG）走内部 `onReceiveMessage`，不进 `setReceiveHandler`
+- daemon 协议（ALLOCATE / RELEASE / SET_SYNC_FLAG / PROCESS_ONLINE）走内部 `onReceiveMessage`，不进 `setReceiveHandler`
 
 ### 动态申请 / 释放共享内存
 
@@ -248,7 +293,7 @@ mgr->RequestReleaseShm("/ipc_dyn_p1_to_p2");
 在 `Common.h` 中按同一槽位扩展（枚举插在 `INVALID_FD` 之前）：
 
 1. 枚举增加 `ProcessN_Fd`
-2. `kProcesses` 增加一行：`{ "/ipc_process_N", "./process_N", PROCESS_SYNC_FLAG_DONE }`
+2. `kProcesses` 增加一行，例如开机拉起 `{ "/ipc_process_N", "./process_N", true, false, PROCESS_SYNC_FLAG_DONE }`，或与当前 demo 一样开机不拉、崩溃接手 `{ "/ipc_process_N", "./process_N", false, true, PROCESS_SYNC_FLAG_DONE }`
 3. 如有对应别名常量（`ProcessN`）一并补上
 4. 在 `demo/` 增加 `process_N.cpp`，`make` 后产物为 `build/bin/process_N`
 
@@ -263,17 +308,17 @@ mgr->RequestReleaseShm("/ipc_dyn_p1_to_p2");
 - `kProcesses[].m_sync_flag`：daemon 创建同步 shm 时该槽的初值
 - `ProcessSyncShmName`：`/ipc_process_sync`
 
-`ProcessManager` 只在 `flags[槽位] == DONE` 时 `fork/exec`；为 `NONE` 或拉起失败时每 **1000ms** 重试，直到被置为 `DONE`。崩溃后重新拉起也走同一检查。
+`ProcessManager` 开机拉起须同时满足：`flags == DONE`、`m_boot == true`、`m_executable` 非空。同步位为 `NONE` 或拉起失败时每 **1000ms** 重试（仅针对会开机拉起的槽）。`m_boot` 子进程崩溃靠 `waitpid` 再拉；开机不拉的槽走 pidfd，再按 `m_restart` 决定是否 fork。
 
-**延迟拉起某个进程**：把该槽初值改成 `NONE`，依赖方就绪后再置 `DONE`。例如希望 `process_3` 等 `process_1` 初始化完再启动：
+**延迟拉起某个进程**（该槽须 `m_boot == true`）：把初值改成 `NONE`，依赖方就绪后再置 `DONE`。例如希望 `process_3` 等 `process_1` 初始化完再启动：
 
 ```cpp
-// Common.h：process_3 初始不拉起
+// Common.h：process_3 开机由 daemon 拉，但等别人置 DONE
 constexpr ProcessDesc kProcesses[] = {
-    { "/ipc_daemon", "./daemon", PROCESS_SYNC_FLAG_DONE },
-    { "/ipc_process_1", "./process_1", PROCESS_SYNC_FLAG_DONE },
-    { "/ipc_process_2", "./process_2", PROCESS_SYNC_FLAG_DONE },
-    { "/ipc_process_3", "./process_3", PROCESS_SYNC_FLAG_NONE },  // 等别人置 DONE
+    { "/ipc_daemon", "./daemon", true, false, PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_process_1", "./process_1", true, false, PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_process_2", "./process_2", true, false, PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_process_3", "./process_3", true, false, PROCESS_SYNC_FLAG_NONE },
 };
 ```
 
@@ -291,7 +336,7 @@ mgr->setSyncFlag(IpcInterface::Define::Process3,
 
 消息经 `MESSAGE_ID_DAEMON` / `MESSAGE_SUB_ID_SET_SYNC_FLAG` 到 daemon，再 `ProcessManager::setProcessSyncFlag`。也可把已在跑的槽改回 `NONE`，之后崩溃将不会被自动拉起，直到再次 `DONE`。
 
-默认四槽全是 `DONE`，与现在 demo 启动即拉起全部业务进程一致。
+当前 demo 四槽同步位都是 `DONE`，但业务槽 `m_boot == false`，所以 daemon 启动后**不会**自动 fork，需要手动起 `process_1/2/3`。
 
 ## 目录结构
 
@@ -316,4 +361,4 @@ Makefile
 - 共享内存对象在 `/dev/shm/`，名称以 `/` 开头（如 `/ipc_process_1`）
 - 同步位访问：`ProcessSyncInfo::m_flags[Define::Process1_Fd]`（槽位枚举，不是系统 fd）；用法见上文「进程同步」
 - 槽位超时等策略见 `StreamShmCreator.h` 中 `TIMEOUT_*`
-- Windows 下仅便于浏览代码；完整功能请在 Linux / WSL 编译运行
+- Windows 下仅便于浏览代码；完整功能请在 Linux / **WSL2** 编译运行（WSL1 无 `pidfd_open`，外部报到不可用）

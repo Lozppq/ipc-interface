@@ -77,6 +77,43 @@ void MessageThread::stopTimer(int timer_fd)
         LOG_ERROR("MessageThread::stopTimer queue full, drop stop fd=%d", timer_fd);
 }
 
+bool MessageThread::addFd(int fd, FdCallback callback)
+{
+    if (fd < 0 || !callback)
+        return false;
+    if (isInWorkerThread())
+        return m_epoll.addFd(fd, std::move(callback));
+    bool ok = false;
+    SemaphoreHandle done(0, SemaphoreHandle::ShareThread);
+    if (!m_epoll.post([this, &done, &ok, fd, cb = std::move(callback)]() mutable
+    {
+        ok = m_epoll.addFd(fd, std::move(cb));
+        done.post();
+    }))
+    {
+        LOG_ERROR("MessageThread::addFd queue full, fd=%d", fd);
+        return false;
+    }
+    done.wait();
+    return ok;
+}
+
+void MessageThread::removeFd(int fd)
+{
+    if (fd < 0)
+        return;
+    if (isInWorkerThread())
+    {
+        m_epoll.removeFd(fd);
+        return;
+    }
+    if (!m_epoll.post([this, fd]()
+    {
+        m_epoll.removeFd(fd);
+    }))
+        LOG_ERROR("MessageThread::removeFd queue full, fd=%d", fd);
+}
+
 void MessageThread::Run()
 {
     while (isRunning())

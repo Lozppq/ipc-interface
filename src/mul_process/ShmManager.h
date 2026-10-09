@@ -33,11 +33,11 @@ enum : uint8_t
     RELEASE_SHM_FORCE = 1,
 };
 
-constexpr uint8_t HEARTBEAT_TIMEOUT_SEC = 5;
 constexpr int INVALID_FD = -1;
 
 using SyncFlagCallback = std::function<void(uint8_t logic_id, uint8_t flag)>;
 using StartProcessCallback = std::function<void(std::string shm_name, uint8_t logic_id)>;
+using ProcessOnlineCallback = std::function<void(uint8_t logic_id, uint32_t os_pid)>;
 
 class ShmManager : public Model::MessageThread
 {
@@ -126,6 +126,7 @@ public:
      * @brief 设置同步标志回调函数
     */
     void setSyncFlagCallback(SyncFlagCallback callback);
+    void setProcessOnlineCallback(ProcessOnlineCallback callback);
 
     /**
      * @brief 设置同步标志（可任意线程直调）
@@ -177,16 +178,6 @@ private:
     void tryStartFixedProcesses();
 
     /**
-     * @brief 处理定时器消息
-    */
-    void OnTimer(int timer_fd);
-
-    /**
-     * @brief 处理心跳定时器
-    */
-    void handleHeartbeatTimer();
-    
-    /**
      * @brief 处理守护进程消息
      * @param tag 消息数据
     */
@@ -194,9 +185,8 @@ private:
     void handleDaemon_AllocateShm(TagReceiveMessage& tag);
     void handleDaemon_ReleaseShm(TagReceiveMessage& tag);
     void handleDaemon_SetSyncFlag(TagReceiveMessage& tag);
-    void handleDaemon_Heartbeat(TagReceiveMessage& tag);
-    void sendHeartbeat();
-    void checkHeartbeatTimeout();
+    void handleDaemon_ProcessOnline(TagReceiveMessage& tag);
+    void sendProcessOnline();
 
     /**
      * @brief 处理业务进程消息
@@ -235,9 +225,8 @@ private:
     std::unordered_map<std::string, ReceiveHandler> m_receive_handlers;
     SyncFlagCallback m_sync_flag_callback{NULL};
     StartProcessCallback m_start_process_callback{NULL};
+    ProcessOnlineCallback m_process_online_callback{NULL};
     bool m_fixed_processes_started{false};
-    uint8_t m_heartbeat_remain[Define::kShmNameCount]{};
-    int m_heartbeat_timer_fd{INVALID_FD};
 };
 
 } // namespace MulProcess

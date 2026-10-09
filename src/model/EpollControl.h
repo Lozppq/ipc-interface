@@ -19,6 +19,7 @@ namespace Model
 {
 
 using TimerCallback = std::function<void(int fd)>;
+using FdCallback = std::function<void(int fd)>;
 
 class EpollControl
 {
@@ -32,6 +33,8 @@ public:
     bool post(std::function<void()> callback);
     int startTimer(uint32_t interval_ms, bool periodic, TimerCallback callback);
     void stopTimer(int fd);
+    bool addFd(int fd, FdCallback callback);
+    void removeFd(int fd);
     int wait(int timeout_ms = -1);
     void wake();
 
@@ -46,6 +49,7 @@ private:
     EventHandle m_event;
     LockFreeQueue<std::function<void()>> m_queue;
     std::map<int, TimerItem> m_timers;
+    std::map<int, FdCallback> m_fds;
 };
 
 } // namespace Model

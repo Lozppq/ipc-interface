@@ -66,19 +66,24 @@ enum
     PROCESS_SYNC_FLAG_DONE = 1,
 };
 
-// 进程槽位：共享内存名、可执行文件、同步初值。下标与上面的槽位枚举一致
+// 进程槽位：共享内存名、可执行文件、开机拉起、报到后崩溃拉起、同步初值。下标与槽位枚举一致。
+// 任何 fork 都须 m_executable 非空（nullptr / "" 都不拉起）。
+// m_boot：开机时 daemon 是否 fork；true 则崩溃走 waitpid 再拉。
+// m_restart：仅 m_boot==false；PROCESS_ONLINE + pidfd 退出后是否 daemon fork。
 typedef struct
 {
     const char* m_shm_name;
     const char* m_executable;
+    bool m_boot;
+    bool m_restart;
     uint8_t m_sync_flag;
 } ProcessDesc;
 
 constexpr ProcessDesc kProcesses[] = {
-    { "/ipc_daemon", "./daemon", PROCESS_SYNC_FLAG_DONE },
-    { "/ipc_process_1", "./process_1", PROCESS_SYNC_FLAG_DONE },
-    { "/ipc_process_2", "./process_2", PROCESS_SYNC_FLAG_DONE },
-    { "/ipc_process_3", "./process_3", PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_daemon", "./daemon", true, false, PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_process_1", "./process_1", false, true, PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_process_2", "./process_2", false, true, PROCESS_SYNC_FLAG_DONE },
+    { "/ipc_process_3", "./process_3", false, true, PROCESS_SYNC_FLAG_DONE },
 };
 
 constexpr uint32_t kShmNameCount = sizeof(kProcesses) / sizeof(kProcesses[0]);

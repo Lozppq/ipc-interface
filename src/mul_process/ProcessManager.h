@@ -18,6 +18,7 @@ typedef struct
     std::string m_shm_name;  // 共享内存名称
     std::string m_process_executable_name;  // 进程可执行文件名称
     uint32_t m_pid;  // 进程id
+    int m_fd{-1};  // 外部进程 pidfd；daemon 子进程为 -1
 } ProcessInfo;
 
 class ProcessManager : public Model::MessageThread
@@ -72,6 +73,11 @@ public:
     void postHandleProcessCrash(uint32_t pid);
 
     /**
+     * @brief 外部进程报到（可任意线程调用）
+    */
+    void postProcessOnline(uint8_t logic_id, uint32_t os_pid);
+
+    /**
      * @brief 根据传入的逻辑进程id，设置同步标志
     */
     void setProcessSyncFlag(uint8_t logic_id, uint8_t flag);
@@ -104,6 +110,12 @@ protected:
 
     void OnThreadInit() override;
     uint8_t getLogicProcessId(const std::string& shm_name) const;
+    void handleProcessOnline(uint8_t logic_id, uint32_t os_pid);
+    void onPidfd(int fd);
+    void unwatchPidfd(ProcessInfo& info);
+    static bool executableOk(const char* exe);
+    static bool shouldLaunchAtBoot(uint8_t logic_id);
+    static bool shouldRelaunchAfterOnline(uint8_t logic_id);
 
 private:
     ProcessStartedCallback m_process_started_callback;

@@ -19,6 +19,7 @@
 #include <memory>
 #if defined(__linux__)
 #include <sched.h>
+#include <unistd.h>
 #endif
 
 namespace IpcInterface
@@ -177,23 +178,6 @@ void ShmManager::addPidNameInfo(PidNameInfo info)
 void ShmManager::OnThreadInit()
 {
     initShm(m_shm_name == Define::Daemon);
-    m_heartbeat_timer_fd = startTimer(1000, true, std::bind(&ShmManager::OnTimer, this, std::placeholders::_1));
-}
-
-void ShmManager::OnTimer(int timer_fd)
-{
-    if (timer_fd == m_heartbeat_timer_fd)
-    {
-        handleHeartbeatTimer();
-    }
-}
-
-void ShmManager::handleHeartbeatTimer()
-{
-    if (m_shm_name == Define::Daemon)
-        checkHeartbeatTimeout();
-    else
-        sendHeartbeat();
 }
 
 void ShmManager::initShm(bool create)
@@ -236,6 +220,7 @@ void ShmManager::openStreamShmRetry(PidNameInfo info, bool create)
             shm->alloc_reader_slot();
         shm->set_reader_index(0);
         initReceiveWork();
+        sendProcessOnline();
     }
     tryStartFixedProcesses();
 }
@@ -356,8 +341,8 @@ void ShmManager::handleDaemonMessage(std::shared_ptr<TagReceiveMessage> tag)
         case Define::MESSAGE_SUB_ID_SET_SYNC_FLAG:
             handleDaemon_SetSyncFlag(*tag);
             break;
-        case Define::MESSAGE_SUB_ID_HEARTBEAT:
-            handleDaemon_Heartbeat(*tag);
+        case Define::MESSAGE_SUB_ID_PROCESS_ONLINE:
+            handleDaemon_ProcessOnline(*tag);
             break;
         default:
             break;
@@ -491,43 +476,42 @@ void ShmManager::handleDaemon_SetSyncFlag(TagReceiveMessage& tag)
         m_sync_flag_callback(logic_id, flag);
 }
 
-void ShmManager::handleDaemon_Heartbeat(TagReceiveMessage& tag)
+void ShmManager::handleDaemon_ProcessOnline(TagReceiveMessage& tag)
 {
-    if (tag.m_data.size() < 3)
+    if (tag.m_data.size() < 7)
+    {
+        LOG_ERROR("ShmManager: PROCESS_ONLINE truncated, size=%zu", tag.m_data.size());
         return;
+    }
     uint8_t logic_id = tag.m_data[2];
+    uint32_t os_pid = Standard::Small_U8ToU32(tag.m_data.data() + 3);
+    if (m_process_online_callback)
+        m_process_online_callback(logic_id, os_pid);
+}
+
+void ShmManager::sendProcessOnline()
+{
+    if (m_shm_name == Define::Daemon)
+        return;
+    uint8_t logic_id = getLogicProcessId(m_shm_name);
     if (logic_id == Define::Daemon_Fd || logic_id >= Define::kShmNameCount)
         return;
-    m_heartbeat_remain[logic_id] = HEARTBEAT_TIMEOUT_SEC;
-}
-
-void ShmManager::sendHeartbeat()
-{
-    uint8_t logic_id = getLogicProcessId(m_shm_name);
-    if (logic_id >= Define::INVALID_FD)
+    uint8_t buf[7];
+    Standard::Small_U16ToU8(Define::MESSAGE_SUB_ID_PROCESS_ONLINE, buf);
+    buf[2] = logic_id;
+#if defined(__linux__)
+    Standard::Small_U32ToU8(static_cast<uint32_t>(::getpid()), buf + 3);
+#else
+    Standard::Small_U32ToU8(0, buf + 3);
+#endif
+    auto send_msg = makeSendMessage(std::vector<uint8_t>(buf, buf + 7), Define::MESSAGE_ID_DAEMON);
+    if (send(send_msg, Define::Daemon))
         return;
-    uint8_t buf[3];
-    uint8_t* p = buf;
-    Standard::Small_U16ToU8(Define::MESSAGE_SUB_ID_HEARTBEAT, p);
-    p += 2;
-    *p = logic_id;
-    auto send_msg = makeSendMessage(std::vector<uint8_t>(buf, buf + 3), Define::MESSAGE_ID_DAEMON);
-    send(send_msg, Define::Daemon);
-}
-
-void ShmManager::checkHeartbeatTimeout()
-{
-    for (uint8_t i = Define::Process1_Fd; i < Define::kShmNameCount; i++)
+    LOG_ERROR("ShmManager: send PROCESS_ONLINE failed, shm_name=%s", m_shm_name.c_str());
+    postTimer(1000, [this](int)
     {
-        if (m_heartbeat_remain[i] == 0)
-            continue;
-        m_heartbeat_remain[i]--;
-        if (m_heartbeat_remain[i] == 0)
-        {
-            LOG_ERROR("ShmManager: heartbeat timeout, logic_id = %u", i);
-            handleProcessCrash(i);
-        }
-    }
+        sendProcessOnline();
+    });
 }
 
 void ShmManager::handleProcess_AllocateShm(TagReceiveMessage& tag)
@@ -719,8 +703,6 @@ void ShmManager::handleProcessCrash(uint8_t logic_id)
 {
     if (logic_id == Define::INVALID_FD)
         return;
-    if (logic_id < Define::kShmNameCount)
-        m_heartbeat_remain[logic_id] = 0;
     for (size_t i = 0; i < m_pidNameInfos.size();)
     {
         PidNameInfo& info = m_pidNameInfos[i];
@@ -739,6 +721,13 @@ void ShmManager::handleProcessCrash(uint8_t logic_id)
         uint8_t reader_index = info.readerIndexOf(logic_id);
         if (shm && reader_index < MAX_READER_COUNT)
             shm->drop_reader(reader_index);
+        if (getLogicProcessId(info.m_shm_name) != Define::INVALID_FD)
+        {
+            LOG_DEBUG("ShmManager: handleProcessCrash keep fixed, shm_name = %s, logic_id = %u",
+                info.m_shm_name.c_str(), logic_id);
+            i++;
+            continue;
+        }
         info.remove(logic_id);
         if (!info.empty())
         {
@@ -891,6 +880,11 @@ void ShmManager::enableChannel(const std::string& shm_name)
 void ShmManager::setSyncFlagCallback(SyncFlagCallback callback)
 {
     m_sync_flag_callback = callback;
+}
+
+void ShmManager::setProcessOnlineCallback(ProcessOnlineCallback callback)
+{
+    m_process_online_callback = std::move(callback);
 }
 
 bool ShmManager::setSyncFlag(std::string shm_name, uint8_t flag)
