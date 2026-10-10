@@ -8,9 +8,17 @@
 #include <sys/wait.h>
 #endif
 
+static void onProcessCrash(uint8_t logic_id, uint32_t os_pid)
+{
+    IpcInterface::MulProcess::ShmManager::getInstance()->post([logic_id, os_pid]()
+    {
+        IpcInterface::MulProcess::ShmManager::getInstance()->handleProcessCrash(logic_id);
+        IpcInterface::MulProcess::ProcessManager::getInstance()->postHandleProcessCrash(os_pid);
+    });
+}
+
 int main(int argc, char* argv[])
 {
-#if defined(__linux__)
     IpcInterface::Log::setLogPrefix("daemon");
     IpcInterface::MulProcess::ShmManager::getInstance()->initParams(IpcInterface::Define::Daemon);
     IpcInterface::MulProcess::ShmManager::getInstance()->setStartProcessCallback(
@@ -33,10 +41,11 @@ int main(int argc, char* argv[])
         {
             IpcInterface::MulProcess::ShmManager::getInstance()->enableChannel(std::move(shm_name));
         });
+    IpcInterface::MulProcess::ProcessManager::getInstance()->setProcessCrashCallback(onProcessCrash);
     IpcInterface::MulProcess::ProcessManager::getInstance()->start();
     IpcInterface::MulProcess::ShmManager::getInstance()->start();
 
-    // 阻塞等待子进程退出；业务进程崩溃后回收 shm 并重新拉起
+#if defined(__linux__)
     while (true)
     {
         pid_t pid = waitpid(-1, NULL, 0);
@@ -49,16 +58,10 @@ int main(int argc, char* argv[])
                 const uint32_t os_pid = static_cast<uint32_t>(pid);
                 if (!process_manager->isNeedActivePullProcess(os_pid))
                     return;
-                const uint8_t logic_id = process_manager->lookupLogicIdByPid(os_pid);
-                IpcInterface::MulProcess::ShmManager::getInstance()->post([os_pid, logic_id]()
-                {
-                    IpcInterface::MulProcess::ShmManager::getInstance()->handleProcessCrash(logic_id);
-                    IpcInterface::MulProcess::ProcessManager::getInstance()->postHandleProcessCrash(os_pid);
-                });
+                onProcessCrash(process_manager->lookupLogicIdByPid(os_pid), os_pid);
             });
         }
     }
-    return 0;
 #else
     (void)argc;
     (void)argv;

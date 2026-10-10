@@ -4,7 +4,6 @@
 */
 
 #include "ProcessManager.h"
-#include "ShmManager.h"
 #include "../log/Log_Print.h"
 #include <algorithm>
 #include <cstring>
@@ -63,6 +62,11 @@ void ProcessManager::postCreateProcess(std::string shm_name)
 void ProcessManager::setProcessStartedCallback(ProcessStartedCallback callback)
 {
     m_process_started_callback = std::move(callback);
+}
+
+void ProcessManager::setProcessCrashCallback(ProcessCrashCallback callback)
+{
+    m_process_crash_callback = std::move(callback);
 }
 
 void ProcessManager::createProcess(std::string shm_name, std::string process_executable_name)
@@ -223,11 +227,8 @@ void ProcessManager::onPidfd(int fd)
     const uint32_t os_pid = it->m_pid;
     const uint8_t logic_id = getLogicProcessId(it->m_shm_name);
     unwatchPidfd(*it);
-    ShmManager::getInstance()->post([logic_id, os_pid]()
-    {
-        ShmManager::getInstance()->handleProcessCrash(logic_id);
-        ProcessManager::getInstance()->postHandleProcessCrash(os_pid);
-    });
+    if (m_process_crash_callback)
+        m_process_crash_callback(logic_id, os_pid);
 }
 
 void ProcessManager::handleProcessOnline(uint8_t logic_id, uint32_t os_pid)
@@ -252,11 +253,11 @@ void ProcessManager::handleProcessOnline(uint8_t logic_id, uint32_t os_pid)
         unwatchPidfd(*it);
         it = m_process_infos.erase(it);
     }
+    int fd = -1;
 #if defined(__linux__)
 #ifdef SYS_pidfd_open
-    int fd = static_cast<int>(syscall(SYS_pidfd_open, static_cast<pid_t>(os_pid), 0u));
+    fd = static_cast<int>(syscall(SYS_pidfd_open, static_cast<pid_t>(os_pid), 0u));
 #else
-    int fd = -1;
     errno = ENOSYS;
 #endif
     if (fd < 0)
@@ -274,16 +275,16 @@ void ProcessManager::handleProcessOnline(uint8_t logic_id, uint32_t os_pid)
         ::close(fd);
         return;
     }
+#endif
+    if (fd < 0)
+        return;
     std::string exe;
     if (shouldRelaunchAfterOnline(logic_id))
         exe = Define::kProcesses[logic_id].m_executable;
     m_process_infos.push_back({shm_name, std::move(exe), os_pid, fd});
-    ShmManager::getInstance()->enableChannel(shm_name);
+    if (m_process_started_callback)
+        m_process_started_callback(shm_name);
     LOG_DEBUG("ProcessManager: watch external pid, logic_id=%u pid=%u fd=%d", logic_id, os_pid, fd);
-#else
-    (void)os_pid;
-    (void)shm_name;
-#endif
 }
 
 void ProcessManager::postProcessOnline(uint8_t logic_id, uint32_t os_pid)

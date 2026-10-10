@@ -281,10 +281,12 @@ bool ShmManager::send(const std::shared_ptr<TagSendMessage>& buf_msg, const std:
     {
         if (shm->send(buf_msg) >= 0)
             return true;
-#if defined(__linux__)
         if (retry + 1 < kSendMaxRetry)
+        {
+#if defined(__linux__)
             sched_yield();
 #endif
+        }
     }
     return false;
 }

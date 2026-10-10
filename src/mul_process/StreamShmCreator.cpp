@@ -273,13 +273,11 @@ void StreamShmCreator::set_flag(uint32_t flag)
 
 void StreamShmCreator::wakeup_recv()
 {
-#if defined(__linux__)
     if (!valid())
         return;
     auto* hdr = static_cast<SMALLRingQueueHeader*>(m_shm_ptr);
     hdr->m_flag.fetch_and(~static_cast<uint32_t>(Define::BIT1), std::memory_order_release);
     post_reader_sems(hdr, hdr->m_reader_flag.load(std::memory_order_acquire));
-#endif
 }
 
 uint32_t StreamShmCreator::get_sending_count()

@@ -436,10 +436,7 @@ int StreamShmCreator::send_impl(Header* hdr, std::shared_ptr<TagSendMessage> buf
         if (copied == 0 && t_msg_index >= data_size)
             break;
     }
-
-#if defined(__linux__)
     post_reader_sems(hdr, reader_mask);
-#endif
     return static_cast<int>(data_size);
 }
 

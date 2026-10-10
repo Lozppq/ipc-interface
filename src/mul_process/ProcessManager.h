@@ -47,6 +47,9 @@ public:
     using ProcessStartedCallback = std::function<void(std::string shm_name)>;
     void setProcessStartedCallback(ProcessStartedCallback callback);
 
+    using ProcessCrashCallback = std::function<void(uint8_t logic_id, uint32_t os_pid)>;
+    void setProcessCrashCallback(ProcessCrashCallback callback);
+
     /**
      * @brief 获取是否允许创建进程
      * @return 是否允许创建进程
@@ -119,6 +122,7 @@ protected:
 
 private:
     ProcessStartedCallback m_process_started_callback;
+    ProcessCrashCallback m_process_crash_callback;
     std::vector<ProcessInfo> m_process_infos;
     // 进程同步信息共享内存
     std::shared_ptr<Model::ShmCreator<Define::ProcessSyncInfo>> m_process_sync_shm_creator;
