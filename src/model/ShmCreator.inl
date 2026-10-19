@@ -4,12 +4,12 @@
 */
 
 template<typename T>
-ShmCreator<T>::ShmCreator(const std::string& name, uint32_t total_size)
+ShmCreator<T>::ShmCreator(std::string name, uint32_t total_size)
     : m_total_size(total_size),
       m_shm_ptr(NULL),
       m_shm_fd(-1),
       m_is_owner(false),
-      m_shm_name(name)
+      m_shm_name(std::move(name))
 {
 }
 

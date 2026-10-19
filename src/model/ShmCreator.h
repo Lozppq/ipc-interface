@@ -9,6 +9,7 @@
 #include <string>
 #include <cstdio>
 #include "../log/Log_Print.h"
+#include <utility>
 #if defined(__linux__)
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -29,7 +30,7 @@ template<typename T>
 class ShmCreator
 {
 public:
-    ShmCreator(const std::string& name, uint32_t total_size);
+    ShmCreator(std::string name, uint32_t total_size);
     ~ShmCreator();
     ShmCreator(const ShmCreator&) = delete;
     ShmCreator& operator=(const ShmCreator&) = delete;
